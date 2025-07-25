@@ -4,7 +4,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { 
     getFirestore, doc, getDoc, setDoc, addDoc, deleteDoc, onSnapshot, 
-    collection, query, writeBatch, getDocs 
+    collection, query, writeBatch, getDocs, updateDoc 
 } from 'firebase/firestore';
 import { 
     LayoutDashboard, FlaskConical, Contact, Settings, 
@@ -69,10 +69,10 @@ const useFirestoreCollection = (collectionName, isAuthReady) => {
 };
 
 // --- COMPONENTI UI GENERICI ---
-const Modal = ({ isOpen, onClose, title, children, size = 'max-w-lg' }) => {
+const Modal = ({ isOpen, onClose, title, children, size = 'max-w-lg', zIndex = 'z-50' }) => {
     if (!isOpen) return null;
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4 animate-fade-in">
+        <div className={`fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center ${zIndex} p-4 animate-fade-in`}>
             <div className={`bg-white rounded-lg shadow-xl p-6 w-full ${size} m-4 transform transition-transform duration-300 animate-fade-in-up`}>
                 <div className="flex justify-between items-center border-b pb-3 mb-4">
                     <h4 className="text-xl font-semibold text-gray-800">{title}</h4>
@@ -110,7 +110,7 @@ const AlertModal = ({ isOpen, onClose, title, message, type = 'info' }) => {
 const ConfirmModal = ({ isOpen, onCancel, onConfirm, title, message }) => {
     if (!isOpen) return null;
     return (
-        <Modal isOpen={isOpen} onClose={onCancel} title={title}>
+        <Modal isOpen={isOpen} onClose={onCancel} title={title} zIndex="z-[60]">
             <div className="text-center">
                 <p className="text-gray-700 my-4">{message}</p>
                 <div className="flex justify-center gap-4 mt-6">
@@ -274,7 +274,7 @@ const MultiStatusModal = ({ isOpen, onClose, vendite, showAlert }) => {
 
 // --- COMPONENTI DI SEZIONE ---
 
-const Laboratorio = ({ vendite, venditori }) => {
+const Laboratorio = ({ vendite, venditori, riparazioni }) => {
     const [subView, setSubView] = React.useState('menu');
     const [consegnaRapida, setConsegnaRapida] = React.useState('');
     const [searchResults, setSearchResults] = React.useState([]);
@@ -287,6 +287,10 @@ const Laboratorio = ({ vendite, venditori }) => {
     const showAlert = (title, message, type = 'info') => setAlertState({ isOpen: true, title, message, type });
     const closeAlert = () => setAlertState({ ...alertState, isOpen: false });
     const [escludiConsegnati, setEscludiConsegnati] = React.useState(true);
+    
+    const [isEditRiparazioneModalOpen, setIsEditRiparazioneModalOpen] = React.useState(false);
+    const [isActionModalOpen, setIsActionModalOpen] = React.useState(false);
+    const [selectedRiparazione, setSelectedRiparazione] = React.useState(null);
 
     const statusConfig = {
         'ORDINE IN CORSO': { variant: 'primary', icon: FlaskConical },
@@ -305,14 +309,26 @@ const Laboratorio = ({ vendite, venditori }) => {
                 if (ordine) {
                     try {
                         await setDoc(getDocumentRef('vendite', ordine.id), { stato_ordine: 'CONSEGNATO' }, { merge: true });
-                        showAlert('Successo', `Ordine per vaschetta ${vaschetta} (Cliente: ${ordine.cliente}) segnato come CONSEGNATO.`, 'success');
+                        showAlert('Successo', `Ordine per vaschetta ${ordine.rif_vaschetta} (Cliente: ${ordine.cliente}) segnato come CONSEGNATO.`, 'success');
                         setConsegnaRapida('');
                     } catch (error) {
                         console.error("Errore consegna rapida:", error);
                         showAlert('Errore', `Impossibile aggiornare l'ordine: ${error.message}`, 'error');
                     }
                 } else {
-                    showAlert('Errore', `Nessun ordine attivo trovato per la vaschetta ${vaschetta}.`, 'error');
+                     const riparazione = riparazioni.find(r => r.rif_vaschetta === vaschetta && r.stato !== 'CONSEGNATO');
+                     if (riparazione) {
+                         try {
+                            await updateDoc(getDocumentRef('riparazioni', riparazione.id), { stato: 'CONSEGNATO' });
+                            showAlert('Successo', `Riparazione per vaschetta ${riparazione.rif_vaschetta} (Cliente: ${riparazione.cliente}) segnata come CONSEGNATA.`, 'success');
+                            setConsegnaRapida('');
+                         } catch (error) {
+                             console.error("Errore consegna rapida riparazione:", error);
+                             showAlert('Errore', `Impossibile aggiornare la riparazione: ${error.message}`, 'error');
+                         }
+                     } else {
+                        showAlert('Errore', `Nessun ordine o riparazione attiva trovata per la vaschetta ${vaschetta}.`, 'error');
+                     }
                 }
             }
         }
@@ -360,12 +376,23 @@ const Laboratorio = ({ vendite, venditori }) => {
         }
     };
 
+    const openEditRiparazioneModal = (riparazione) => {
+        setSelectedRiparazione(riparazione);
+        setIsEditRiparazioneModalOpen(true);
+    };
+
+    const openActionModal = (riparazione) => {
+        setSelectedRiparazione(riparazione);
+        setIsActionModalOpen(true);
+    };
+
     const renderMenu = () => (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Button onClick={() => setSubView('carica')} variant="success" icon={PlusCircle}>Carica Vendita</Button>
             <Button onClick={() => setSubView('caricaRiparazione')} variant="success" icon={PlusCircle}>Carica Riparazione/Ordine</Button>
             <Button onClick={() => setSubView('stato')} variant="primary" icon={List}>Stato Occhiale</Button>
-            <Button onClick={() => setSubView('elimina')} variant="danger" icon={Trash2}>Elimina Vendita</Button>
+            <Button onClick={() => setSubView('cercaRiparazione')} variant="primary" icon={Settings}>Cerca Riparazione</Button>
+            <Button onClick={() => setSubView('elimina')} variant="danger" icon={Trash2} className="md:col-span-2">Elimina Vendita</Button>
         </div>
     );
 
@@ -459,6 +486,8 @@ const Laboratorio = ({ vendite, venditori }) => {
     };
 
     const CaricaRiparazioneForm = () => {
+        const [inGaranzia, setInGaranzia] = React.useState(false);
+    
         const handleSubmit = async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
@@ -468,10 +497,14 @@ const Laboratorio = ({ vendite, venditori }) => {
                 showAlert("Errore di Compilazione", "Compilare i campi obbligatori 'Cognome Cliente' e 'Descrizione'.", "error");
                 return;
             }
-    
+            
+            const importoValue = inGaranzia ? 0 : (parseFloat(data.importo) || 0);
+
             const nuovoOrdine = {
                 ...data,
-                importo: data.importo ? parseFloat(data.importo) : 0,
+                importo: importoValue,
+                in_garanzia: inGaranzia,
+                note: "",
                 data: new Date().toLocaleDateString('it-IT'),
                 tipo: 'riparazione'
             };
@@ -510,7 +543,31 @@ const Laboratorio = ({ vendite, venditori }) => {
                             </Select>
                         </div>
                         <div><label>Rif. Vaschetta (Opzionale)</label><Input type="text" name="rif_vaschetta" pattern="\d{3}" maxLength="3" /></div>
-                        <div><label>Importo (€) (Opzionale)</label><Input type="number" name="importo" step="0.01" min="0" /></div>
+                        <div>
+                             <label>Importo (€) (Opzionale)</label>
+                             <div className="flex items-center gap-2">
+                                <Input
+                                    type="number"
+                                    name="importo"
+                                    step="0.01"
+                                    min="0"
+                                    key={inGaranzia ? 'garanzia' : 'no-garanzia'}
+                                    placeholder={inGaranzia ? "Nulla da pagare" : "0.00"}
+                                    disabled={inGaranzia}
+                                    className={`flex-grow ${inGaranzia ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                                />
+                                <div className="flex items-center pt-1 whitespace-nowrap">
+                                    <input
+                                        type="checkbox"
+                                        id="in_garanzia"
+                                        checked={inGaranzia}
+                                        onChange={(e) => setInGaranzia(e.target.checked)}
+                                        className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 mr-2"
+                                    />
+                                    <label htmlFor="in_garanzia" className="font-medium text-gray-700">In Garanzia</label>
+                                </div>
+                             </div>
+                        </div>
                     </div>
                     <div className="flex gap-4 pt-4">
                         <Button type="submit" variant="success" icon={PlusCircle}>Salva Ordine</Button>
@@ -569,7 +626,75 @@ const Laboratorio = ({ vendite, venditori }) => {
             </div>
         );
     };
+
+    const CercaRiparazione = () => {
+        const [risultati, setRisultati] = React.useState([]);
+        const [cercaCliente, setCercaCliente] = React.useState('');
+        const [cercaVaschetta, setCercaVaschetta] = React.useState('');
     
+        const handleSearchRiparazioni = () => {
+            const cliente = cercaCliente.trim().toLowerCase();
+            const vaschetta = cercaVaschetta.trim();
+    
+            if (!cliente && !vaschetta) {
+                setRisultati([]);
+                showAlert('Info', 'Inserire un cognome o un rif. vaschetta per cercare.', 'info');
+                return;
+            }
+    
+            const filtered = riparazioni.filter(r => {
+                const clienteMatch = cliente ? r.cliente.toLowerCase().includes(cliente) : true;
+                const vaschettaMatch = vaschetta ? (r.rif_vaschetta && r.rif_vaschetta.includes(vaschetta)) : true;
+                return (cliente || vaschetta) && clienteMatch && vaschettaMatch;
+            }).sort((a, b) => new Date(b.data.split('/').reverse().join('-')) - new Date(a.data.split('/').reverse().join('-')));
+            setRisultati(filtered);
+        };
+    
+        return (
+            <div>
+                <h3 className="text-2xl font-semibold mb-4">Cerca Riparazione</h3>
+                <div className="bg-gray-50 p-4 rounded-lg flex items-end gap-4 mb-6">
+                    <div className="flex-grow">
+                        <label>Cerca per Cognome Cliente</label>
+                        <Input type="text" value={cercaCliente} onChange={(e) => setCercaCliente(e.target.value)} />
+                    </div>
+                    <div className="flex-grow">
+                        <label>Cerca per Rif. Vaschetta</label>
+                        <Input type="text" value={cercaVaschetta} onChange={(e) => setCercaVaschetta(e.target.value)} maxLength="3" />
+                    </div>
+                    <Button onClick={handleSearchRiparazioni}>Cerca</Button>
+                </div>
+                <div>
+                    {risultati.length > 0 ? (
+                        <ul className="space-y-3">
+                            {risultati.map(r => (
+                                <li key={r.id} className="bg-white p-4 rounded-lg shadow flex justify-between items-center">
+                                    <div>
+                                        <p>
+                                            <strong>Cliente:</strong> {r.cliente} - <strong>Data:</strong> {r.data}
+                                            {r.rif_vaschetta && (
+                                                <span> - <strong>Vaschetta:</strong> {r.rif_vaschetta}</span>
+                                            )}
+                                        </p>
+                                        <p><strong>Descrizione:</strong> {r.descrizione}</p>
+                                        <p><strong>Stato:</strong> <span className="font-bold">{r.stato}</span></p>
+                                    </div>
+                                    <div className="flex flex-shrink-0 gap-2">
+                                        <Button onClick={() => openEditRiparazioneModal(r)} variant="indigo" icon={Edit}>Apri/Modifica</Button>
+                                        <Button onClick={() => openActionModal(r)} variant="danger" icon={Trash2}>Consegna/Elimina</Button>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <p className="text-center text-gray-500 mt-4">Nessun risultato. Effettua una ricerca.</p>
+                    )}
+                </div>
+                <Button onClick={() => setSubView('menu')} variant="neutral" className="mt-6">Torna al menu</Button>
+            </div>
+        );
+    };
+
     const EliminaVendita = () => {
         const [numOrdine, setNumOrdine] = React.useState('');
         const [ConfirmationDialog, requestConfirmation] = useConfirmation("Conferma Eliminazione");
@@ -614,6 +739,124 @@ const Laboratorio = ({ vendite, venditori }) => {
         );
     };
 
+    const ModificaRiparazioneModal = ({ isOpen, onClose, riparazione, onSave }) => {
+        const [descrizione, setDescrizione] = React.useState('');
+        const [nuovaNota, setNuovaNota] = React.useState('');
+        const [stato, setStato] = React.useState('');
+
+        React.useEffect(() => {
+            if (riparazione) {
+                setDescrizione(riparazione.descrizione || '');
+                setStato(riparazione.stato || 'IN ATTESA');
+                setNuovaNota('');
+            }
+        }, [riparazione]);
+
+        if (!isOpen || !riparazione) return null;
+
+        const handleSaveChanges = async () => {
+            let updatedNotes = riparazione.note || '';
+            if (nuovaNota.trim()) {
+                const timestamp = new Date().toLocaleString('it-IT');
+                const newNoteEntry = `\n--- ${timestamp} ---\n${nuovaNota.trim()}`;
+                updatedNotes += newNoteEntry;
+            }
+            
+            try {
+                const docRef = getDocumentRef('riparazioni', riparazione.id);
+                await updateDoc(docRef, {
+                    descrizione: descrizione,
+                    note: updatedNotes,
+                    stato: stato
+                });
+                onSave('Successo', 'Modifiche salvate con successo.', 'success');
+            } catch (error) {
+                console.error("Errore salvataggio modifiche riparazione:", error);
+                onSave('Errore', `Impossibile salvare le modifiche: ${error.message}`, 'error');
+            }
+        };
+
+        return (
+            <Modal isOpen={isOpen} onClose={onClose} title={`Dettaglio Riparazione: ${riparazione.cliente}`} size="max-w-2xl">
+                <div className="space-y-4">
+                    <div>
+                        <label className="font-semibold">Stato</label>
+                        <Select value={stato} onChange={(e) => setStato(e.target.value)}>
+                            <option value="IN ATTESA">IN ATTESA</option>
+                            <option value="IN LAVORAZIONE">IN LAVORAZIONE</option>
+                            <option value="PRONTO">PRONTO</option>
+                            <option value="CONSEGNATO">CONSEGNATO</option>
+                        </Select>
+                    </div>
+                    <div>
+                        <label className="font-semibold">Descrizione (Modificabile)</label>
+                        <TextArea value={descrizione} onChange={(e) => setDescrizione(e.target.value)} rows="4"/>
+                    </div>
+                    <div>
+                        <label className="font-semibold">Note Esistenti</label>
+                        <div className="mt-1 p-2 bg-gray-50 border rounded-md max-h-40 overflow-y-auto whitespace-pre-wrap text-sm">
+                            {riparazione.note || 'Nessuna nota presente.'}
+                        </div>
+                    </div>
+                     <div>
+                        <label className="font-semibold">Aggiungi Nuova Nota</label>
+                        <TextArea value={nuovaNota} onChange={(e) => setNuovaNota(e.target.value)} rows="3" placeholder="Scrivi qui una nuova nota... (es. spedito, in attesa pezzo di ricambio, ecc.)"/>
+                    </div>
+                    <div className="flex justify-end gap-4 pt-4">
+                        <Button onClick={onClose} variant="neutral">Annulla</Button>
+                        <Button onClick={handleSaveChanges} variant="success">Salva Modifiche</Button>
+                    </div>
+                </div>
+            </Modal>
+        );
+    };
+
+    const RiparazioneActionModal = ({ isOpen, onClose, riparazione, onAction }) => {
+        const [ConfirmationDialog, requestConfirmation] = useConfirmation("Conferma Azione");
+    
+        if (!isOpen || !riparazione) return null;
+    
+        const handleConsegna = () => {
+            requestConfirmation(`Sei sicuro di voler segnare la riparazione per "${riparazione.cliente}" come CONSEGNATA?`, async () => {
+                try {
+                    const docRef = getDocumentRef('riparazioni', riparazione.id);
+                    await updateDoc(docRef, { stato: 'CONSEGNATO' });
+                    onAction('Successo', 'Riparazione segnata come CONSEGNATA.', 'success');
+                } catch (error) {
+                    onAction('Errore', `Impossibile aggiornare lo stato: ${error.message}`, 'error');
+                }
+            });
+        };
+    
+        const handleDelete = () => {
+            requestConfirmation(`Sei SICURO di voler eliminare DEFINITIVAMENTE la riparazione per "${riparazione.cliente}"? L'azione è irreversibile.`, async () => {
+                try {
+                    const docRef = getDocumentRef('riparazioni', riparazione.id);
+                    await deleteDoc(docRef);
+                    onAction('Successo', 'Riparazione eliminata con successo.', 'success');
+                } catch (error) {
+                    onAction('Errore', `Impossibile eliminare la riparazione: ${error.message}`, 'error');
+                }
+            });
+        };
+    
+        return (
+            <>
+                <ConfirmationDialog />
+                <Modal isOpen={isOpen} onClose={onClose} title={`Azioni per Riparazione: ${riparazione.cliente}`}>
+                    <div className="text-center space-y-4">
+                        <p>Scegli un'azione per la riparazione del cliente <strong>{riparazione.cliente}</strong> del <strong>{riparazione.data}</strong>.</p>
+                        <div className="flex justify-center gap-4 pt-4">
+                            <Button onClick={handleConsegna} variant="success" icon={CheckCircle}>Segna come Consegnato</Button>
+                            <Button onClick={handleDelete} variant="danger" icon={Trash2}>Elimina Definitivamente</Button>
+                        </div>
+                    </div>
+                </Modal>
+            </>
+        );
+    };
+
+
     return (
         <div className="bg-white p-6 rounded-lg shadow-lg">
             <AlertModal {...alertState} onClose={closeAlert} />
@@ -623,6 +866,25 @@ const Laboratorio = ({ vendite, venditori }) => {
                 vendite={vendite}
                 showAlert={showAlert}
             />
+            <ModificaRiparazioneModal 
+                isOpen={isEditRiparazioneModalOpen}
+                onClose={() => setIsEditRiparazioneModalOpen(false)}
+                riparazione={selectedRiparazione}
+                onSave={(title, message, type) => {
+                    setIsEditRiparazioneModalOpen(false);
+                    showAlert(title, message, type);
+                }}
+            />
+            <RiparazioneActionModal 
+                isOpen={isActionModalOpen}
+                onClose={() => setIsActionModalOpen(false)}
+                riparazione={selectedRiparazione}
+                onAction={(title, message, type) => {
+                    setIsActionModalOpen(false);
+                    showAlert(title, message, type);
+                }}
+            />
+
             <div className="flex justify-between items-center border-b pb-4 mb-6">
                 <h2 className="text-3xl font-bold text-gray-800">Laboratorio</h2>
                 <div className="flex items-center gap-4">
@@ -638,6 +900,7 @@ const Laboratorio = ({ vendite, venditori }) => {
             {subView === 'carica' && <CaricaVenditaForm />}
             {subView === 'caricaRiparazione' && <CaricaRiparazioneForm />}
             {subView === 'stato' && <StatoOcchiale />}
+            {subView === 'cercaRiparazione' && <CercaRiparazione />}
             {subView === 'elimina' && <EliminaVendita />}
             <Modal isOpen={isStatusModalOpen} onClose={() => setIsStatusModalOpen(false)} title={`Modifica Stato Ordine N. ${selectedVendita?.numero_ordine}`}>
                 <div className="grid grid-cols-2 gap-3">
@@ -1427,6 +1690,7 @@ export default function App() {
     const venditori = useFirestoreCollection('venditori', isAuthReady);
     const emailAmministrazioni = useFirestoreCollection('emailAmministrazioni', isAuthReady);
     const datiMensiliRaw = useFirestoreCollection('datiMensili', isAuthReady);
+    const riparazioni = useFirestoreCollection('riparazioni', isAuthReady);
 
     React.useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -1473,9 +1737,9 @@ export default function App() {
     const renderSection = () => {
         switch (activeSection) {
             case 'amministrazione': return <Amministrazione venditori={venditori} emailAmministrazioni={emailAmministrazioni} vendite={vendite} />;
-            case 'laboratorio': return <Laboratorio vendite={vendite} venditori={venditori} />;
+            case 'laboratorio': return <Laboratorio vendite={vendite} venditori={venditori} riparazioni={riparazioni} />;
             case 'contattologia': return <Contattologia />;
-            default: return <Laboratorio vendite={vendite} venditori={venditori} />;
+            default: return <Laboratorio vendite={vendite} venditori={venditori} riparazioni={riparazioni} />;
         }
     };
 
