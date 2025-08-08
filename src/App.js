@@ -1859,15 +1859,57 @@ const Laboratorio = ({ vendite, venditori, riparazioni, contatti, initialSubView
 // ===================================================================================
 // --- SEZIONE AMMINISTRAZIONE ---
 // ===================================================================================
-const Amministrazione = ({ venditori, emailAmministrazioni, vendite }) => {
+const Amministrazione = ({ venditori, emailAmministrazioni, vendite, datiMensiliRaw }) => { // <-- NOVITÀ: riceve datiMensiliRaw
     const [subView, setSubView] = React.useState('menu');
     const [isGestioneModalOpen, setIsGestioneModalOpen] = React.useState(false);
     const [isCassettoModalOpen, setIsCassettoModalOpen] = React.useState(false);
 
+    // --- NOVITÀ: Logica per calcolare i dati di chiusura giornaliera ---
+    const datiChiusuraGiornaliera = React.useMemo(() => {
+        const oggi = new Date();
+        const periodYYYYMM = `${oggi.getFullYear()}-${String(oggi.getMonth() + 1).padStart(2, '0')}`;
+        const datiMeseCorrente = datiMensiliRaw.find(d => d.id === periodYYYYMM);
+
+        if (!datiMeseCorrente) {
+            return { saldatoTgt: 0, saldatoCy: 0, woTgt: 0, woCy: 0 };
+        }
+
+        const oggiStr = `${String(oggi.getDate()).padStart(2, '0')}/${String(oggi.getMonth() + 1).padStart(2, '0')}/${oggi.getFullYear()}`;
+        const dayIndex = datiMeseCorrente.dateHeaders.findIndex(h => h === oggiStr);
+
+        if (dayIndex === -1) {
+            return { saldatoTgt: 0, saldatoCy: 0, woTgt: 0, woCy: 0 };
+        }
+
+        const getMetricRow = (name) => datiMeseCorrente.metrics.find(m => m.name.toLowerCase() === name.toLowerCase());
+
+        const saldatoTgtRow = getMetricRow('saldato tgt');
+        const woTgtRow = getMetricRow('wo tgt');
+        const saldatoCyRow = getMetricRow('saldato cy');
+        const woCyRow = getMetricRow('wo cy');
+
+        // Valori target del giorno
+        const saldatoTgt = saldatoTgtRow?.values[dayIndex] || 0;
+        const woTgt = woTgtRow?.values[dayIndex] || 0;
+
+        // Calcola i totali "rolling" fino al giorno corrente (incluso)
+        const calculateRollingTotal = (row) => {
+            if (!row) return 0;
+            return row.values.slice(0, dayIndex + 1).reduce((acc, val) => acc + (parseFloat(val) || 0), 0);
+        };
+
+        const saldatoCy = calculateRollingTotal(saldatoCyRow);
+        const woCy = calculateRollingTotal(woCyRow);
+
+        return { saldatoTgt, saldatoCy, woTgt, woCy };
+    }, [datiMensiliRaw]);
+    // --- FINE NOVITÀ ---
+
     const subViewComponents = {
         datiMensili: <DatiMensili />,
         statistiche: <StatisticheAvanzate vendite={vendite} venditori={venditori} />,
-        chiusura: <InvioChiusura vendite={vendite} emailAmministrazioni={emailAmministrazioni} onClose={() => setSubView('menu')} />,
+        // --- NOVITÀ: passa i dati calcolati a InvioChiusura ---
+        chiusura: <InvioChiusura vendite={vendite} emailAmministrazioni={emailAmministrazioni} onClose={() => setSubView('menu')} datiChiusuraGiornaliera={datiChiusuraGiornaliera} />,
         pdf: <FiltraPdf vendite={vendite} venditori={venditori} onClose={() => setSubView('menu')} />,
     };
 
@@ -1943,29 +1985,38 @@ const DatiMensili = () => {
                         throw new Error("La libreria per la lettura dei file Excel (XLSX) non è disponibile.");
                     }
                     const workbook = window.XLSX.read(event.target.result, { type: 'binary' });
+                    // LEGGE TUTTE LE RIGHE E COLONNE, INCLUSE QUELLE VUOTE
                     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-                    const sheetData = window.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+                    // Usiamo 'range' per assicurarci di catturare tutte le celle, anche quelle vuote
+                    const sheetData = window.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
 
                     let dataStartRowIndex = -1;
+                    // Cerchiamo l'esatta corrispondenza per 'Saldato TGT' nella colonna D (indice 3)
                     for (let i = 0; i < sheetData.length; i++) {
                         if (sheetData[i] && String(sheetData[i][3]).trim().toLowerCase() === 'saldato tgt') {
                             dataStartRowIndex = i;
                             break;
                         }
                     }
-                    if (dataStartRowIndex === -1) throw new Error('Riga "Saldato TGT" non trovata.');
+                    if (dataStartRowIndex === -1) throw new Error('Riga "Saldato TGT" non trovata. Controllare il file Excel.');
 
                     const numDaysInMonth = new Date(periodo.split('-')[0], periodo.split('-')[1], 0).getDate();
                     const dateHeaders = Array.from({ length: numDaysInMonth }, (_, i) => `${String(i + 1).padStart(2, '0')}/${periodo.slice(5, 7)}/${periodo.slice(0, 4)}`);
+
                     const metrics = [];
-                    for (let i = dataStartRowIndex; i <= dataStartRowIndex + 15 && i < sheetData.length; i++) {
+                    // Leggiamo un numero sufficiente di righe per includere tutti i dati
+                    const rowsToRead = 25; 
+                    for (let i = dataStartRowIndex; i < dataStartRowIndex + rowsToRead && i < sheetData.length; i++) {
                         const row = sheetData[i] || [];
                         const metricName = String(row[3] || "").trim();
-                        if (metricName && metricName.toLowerCase() !== "area") {
+                        // Se la metrica ha un nome o se la riga non è completamente vuota, la includiamo
+                        if (metricName || row.slice(4).some(cell => cell !== null)) {
                             const values = row.slice(4, 4 + numDaysInMonth);
-                            metrics.push({ name: metricName, values });
+                            // Sostituiamo 'null' con stringhe vuote per coerenza
+                            metrics.push({ name: metricName, values: values.map(v => v === null ? '' : v) });
                         }
                     }
+
                     const parsedData = { period: periodo, dateHeaders, metrics };
                     await setDoc(getDocumentRef('datiMensili', periodo), parsedData);
                     resolve('File elaborato e salvato con successo.');
@@ -1985,28 +2036,25 @@ const DatiMensili = () => {
 
     const handleDownloadTemplate = () => {
         try {
-            if (!window.XLSX) {
-                throw new Error("Libreria XLSX non disponibile.");
-            }
+            if (!window.XLSX) { throw new Error("Libreria XLSX non disponibile."); }
             const month = periodo.slice(5,7);
             const year = periodo.slice(0,4);
             const numDaysInMonth = new Date(year, month, 0).getDate();
             const headers = ['','','','Metrica'];
-            for(let i=1; i <= numDaysInMonth; i++){
-                headers.push(`${String(i).padStart(2, '0')}/${month}/${year}`);
-            }
-
+            for(let i=1; i <= numDaysInMonth; i++){ headers.push(`${String(i).padStart(2, '0')}/${month}/${year}`); }
             const exampleMetrics = [
-                'saldato tgt', 'saldato cy', 'wo tgt', 'wo cy', 'first tgt', 
-                'first act', 'second tgt', 'second act', 'lac tgt', 'lac act', 
-                'sole tgt', 'sole act', 'varie tgt', 'varie act'
+                'Saldato TGT', 'Saldato CY', 'DELTA ROLLING', 'WO TGT', 'WO CY', 'DELTA ROLLING', 'Saldato vs TARGET', '',
+                'Numero pacchetti lac commissionati', '',
+                'First TGT', 'Second TGT', 'First ACT', 'Second ACT', '', 'Delta rolling 1st', 'Delta rolling 2nd'
             ];
             const data = exampleMetrics.map(metric => {
                 const row = ['','','', metric];
-                for (let i = 0; i < numDaysInMonth; i++) row.push(0);
+                // Lasciamo vuoti i valori per i separatori
+                if (metric !== '') {
+                    for (let i = 0; i < numDaysInMonth; i++) row.push(0);
+                }
                 return row;
             });
-
             const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
             const workbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(workbook, worksheet, `Template ${month}-${year}`);
@@ -2017,6 +2065,21 @@ const DatiMensili = () => {
         }
     };
 
+    // NUOVA FUNZIONE PER LA LOGICA DI RENDER DELLE CELLE
+    const renderCellContent = (metricName, value) => {
+        const isPercentage = metricName.toLowerCase() === 'saldato vs target';
+        const isNumeric = typeof value === 'number';
+
+        if (isPercentage && isNumeric) {
+            return `${(value * 100).toFixed(0)}%`;
+        }
+        if (isNumeric) {
+            return value.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        // Se il valore è vuoto o non è un numero, non mostrare nulla
+        return value || '';
+    };
+
     return (
         <div>
             <h3 className="text-2xl font-semibold mb-4">Dati Mensili</h3>
@@ -2025,33 +2088,72 @@ const DatiMensili = () => {
                 <Input type="file" accept=".xlsx,.xls" onChange={handleFileProcess} />
                 <Button onClick={handleDownloadTemplate} icon={FileDown} variant="teal">Scarica Template</Button>
             </div>
-            <div className="overflow-x-auto">
-                {isLoading ? <p>Caricamento dati...</p> : datiMensili.metrics ? (
-                    <table className="min-w-full bg-white border text-sm">
+            <div className="overflow-x-auto border rounded-lg">
+                {isLoading ? <p className="p-4">Caricamento dati...</p> : datiMensili.metrics ? (
+                    <table className="min-w-full bg-white text-sm">
                         <thead className="sticky top-0 bg-gray-100 z-10">
                             <tr>
-                                <th className="py-2 px-3 border-b border-r font-semibold sticky left-0 bg-gray-100">Metrica</th>
-                                {datiMensili.dateHeaders.map(h => <th key={h} className="py-2 px-3 border-b">{h.split('/')[0]}</th>)}
+                                <th className="py-2 px-4 border-b border-r font-semibold text-left sticky left-0 bg-gray-100 w-64">Metrica</th>
+                                {/* MODIFICA: Mostra DD/MM nell'header */}
+                                {datiMensili.dateHeaders.map(h => <th key={h} className="py-2 px-3 border-b font-normal text-gray-600 w-24">{h.substring(0, 5)}</th>)}
                             </tr>
                         </thead>
                         <tbody>
-                            {datiMensili.metrics.map(m => (
-                                <tr key={m.name} className="hover:bg-gray-50">
-                                    <td className="py-2 px-3 border-b border-r font-semibold sticky left-0 bg-white hover:bg-gray-50">{m.name}</td>
-                                    {m.values.map((v, i) => <td key={i} className="py-2 px-3 border-b text-right">{typeof v === 'number' ? v.toFixed(2) : v}</td>)}
+                            {datiMensili.metrics.map((m, metricIndex) => {
+                                // MODIFICA: Logica per aggiungere i separatori
+                                if (m.name === '') {
+                                    return (
+                                        <tr key={`spacer-${metricIndex}`} className="h-4 bg-gray-50">
+                                            <td colSpan={datiMensili.dateHeaders.length + 1}></td>
+                                        </tr>
+                                    );
+                                }
+                                return (
+                                <tr key={m.name || `row-${metricIndex}`} className="hover:bg-gray-50">
+                                    <td className="py-2 px-4 border-b border-r font-semibold sticky left-0 bg-white hover:bg-gray-50">{m.name}</td>
+                                    {m.values.map((v, i) => (
+                                        <td 
+                                            key={i} 
+                                            // MODIFICA: Applica stili dinamicamente
+                                            className={`
+                                                py-2 px-3 border-b text-right
+                                                ${(v === '' || v === null) ? 'bg-gray-200' : ''}
+                                            `}
+                                        >
+                                            {/* MODIFICA: Usa la funzione di render per formattare il contenuto */}
+                                            {renderCellContent(m.name, v)}
+                                        </td>
+                                    ))}
                                 </tr>
-                            ))}
+                                );
+                            })}
                         </tbody>
                     </table>
-                ) : <p className="text-gray-500 p-4 text-center">Nessun dato per il periodo selezionato. Carica un file.</p>}
+                ) : <p className="text-gray-500 p-8 text-center bg-gray-50">Nessun dato per il periodo selezionato. Carica un file Excel per iniziare.</p>}
             </div>
         </div>
     );
 };
 
-const InvioChiusura = ({ vendite, emailAmministrazioni, onClose }) => {
+const InvioChiusura = ({ vendite, emailAmministrazioni, onClose, datiChiusuraGiornaliera }) => {
     const [selectedEmails, setSelectedEmails] = React.useState([]);
     const [isSending, setIsSending] = React.useState(false);
+    const [manualInputs, setManualInputs] = React.useState({
+        fatturato: '',
+        pacchetti: '',
+        sole: '',
+        valoreSole: ''
+    });
+
+    React.useEffect(() => {
+        setManualInputs({
+            fatturato: '',
+            pacchetti: '',
+            sole: '',
+            valoreSole: ''
+        });
+    }, [datiChiusuraGiornaliera]);
+
 
     const datiOggi = React.useMemo(() => {
         const oggi = new Date();
@@ -2071,6 +2173,31 @@ const InvioChiusura = ({ vendite, emailAmministrazioni, onClose }) => {
         return { sommario, venditeDelGiorno };
     }, [vendite]);
 
+
+    const displayData = React.useMemo(() => {
+        const saldatoTgt = parseFloat(datiChiusuraGiornaliera?.saldatoTgt) || 0;
+        const woTgt = parseFloat(datiChiusuraGiornaliera?.woTgt) || 0;
+        
+        const woCy = datiOggi.sommario.totaleWO;
+
+        const manualFatturatoValue = parseFloat(manualInputs.fatturato);
+        const saldatoCy = !isNaN(manualFatturatoValue) 
+            ? manualFatturatoValue 
+            : (parseFloat(datiChiusuraGiornaliera?.saldatoCy) || 0);
+
+        const deltaRollingSaldato = saldatoCy - saldatoTgt;
+        const deltaRollingWo = woCy - woTgt;
+        
+        const percSaldatoVsTarget = saldatoTgt !== 0 ? (deltaRollingSaldato / saldatoTgt) * 100 : 0;
+
+        return { saldatoTgt, saldatoCy, deltaRollingSaldato, woTgt, woCy, deltaRollingWo, percSaldatoVsTarget };
+    }, [datiChiusuraGiornaliera, manualInputs, datiOggi]);
+    
+    const handleInputChange = (e) => {
+        const { name, value } = e.target;
+        setManualInputs(prev => ({ ...prev, [name]: value }));
+    };
+
     const handleSend = async (e) => {
         e.preventDefault();
         if (selectedEmails.length === 0) {
@@ -2079,13 +2206,8 @@ const InvioChiusura = ({ vendite, emailAmministrazioni, onClose }) => {
         }
         setIsSending(true);
 
-        const formData = new FormData(e.target);
-        const fatturato = formData.get('fatturato');
-        const pacchetti = formData.get('pacchetti');
-        const sole = formData.get('sole');
-        const valoreSole = formData.get('valoreSole');
+        const { fatturato, pacchetti, sole, valoreSole } = manualInputs;
 
-        // Il salvataggio dei dati su Firestore rimane invariato
         const oggi = new Date();
         const periodYYYYMM = `${oggi.getFullYear()}-${String(oggi.getMonth() + 1).padStart(2, '0')}`;
         try {
@@ -2116,75 +2238,48 @@ const InvioChiusura = ({ vendite, emailAmministrazioni, onClose }) => {
             console.error("Errore nel salvataggio dei dati di chiusura:", error);
             toast.error(`Errore salvataggio dati: ${error.message}`);
         }
-
-        // --- INIZIO BLOCCO EMAIL MODIFICATO ---
         
-        // Costruzione del corpo dell'email con il nuovo formato discorsivo e tutti i dati
         let body = `Buonasera,\n\n`;
-        
-        const fatturatoVal = parseFloat(fatturato || 0);
-        const commissionatoVal = datiOggi.sommario.totaleWO;
-        const primiVal = datiOggi.sommario.primiOrdini;
-        const secondiVal = datiOggi.sommario.secondiOrdini;
-        const soleVal = parseInt(sole || '0', 10);
-        const valoreSoleVal = parseFloat(valoreSole || 0);
-        const pacchettiVal = parseInt(pacchetti || '0', 10);
-
-        body += `la giornata odierna si chiude con un fatturato di ${fatturatoVal.toFixed(2)} Euro e un commissionato di ${commissionatoVal.toFixed(2)} Euro.\n`;
-        body += `composto da ${primiVal} primi e ${secondiVal} secondi.\n`;
-       
-
-        // Aggiunge la riga per gli occhiali da sole solo se ne è stato venduto almeno uno
-        if (soleVal > 0) {
-            body += `Occhiali da sole venduti: ${soleVal} per un valore di ${valoreSoleVal.toFixed(2)} Euro.\n`;
+        body += `la giornata odierna si chiude con un fatturato di ${(parseFloat(fatturato) || 0).toFixed(2)} Euro e un commissionato di ${datiOggi.sommario.totaleWO.toFixed(2)} Euro.\n`;
+        body += `composto da ${datiOggi.sommario.primiOrdini} primi e ${datiOggi.sommario.secondiOrdini} secondi.\n`;
+        if (parseInt(sole || '0', 10) > 0) {
+            body += `Occhiali da sole venduti: ${parseInt(sole, 10)} per un valore di ${(parseFloat(valoreSole) || 0).toFixed(2)} Euro.\n`;
         }
-
-        // Aggiunge la riga per i pacchetti LAC solo se ne è stato venduto almeno uno
-        if (pacchettiVal > 0) {
-            body += `Pacchetti LAC venduti: ${pacchettiVal}.\n`;
+        if (parseInt(pacchetti || '0', 10) > 0) {
+            body += `Pacchetti LAC venduti: ${parseInt(pacchetti, 10)}.\n`;
         }
         
-        body += '\n'; // Aggiunge una riga vuota per spaziatura
-        
-        // Aggiunge la tabella di dettaglio (se ci sono vendite)
+        // --- NUOVO BLOCCO RIEPILOGO ---
+        // Questo codice crea una versione testuale del riquadro di riepilogo
+        const formatNumber = (num) => (num || 0).toLocaleString('it-IT', { maximumFractionDigits: 0 });
+        const labelWidth = 20;
+
+        body += '\n\n--- RIEPILOGO GIORNALIERO ---\n\n';
+        body += `${'Saldato TGT:'.padEnd(labelWidth)} ${formatNumber(displayData.saldatoTgt)}\n`;
+        body += `${'Saldato CY:'.padEnd(labelWidth)} ${formatNumber(displayData.saldatoCy)}\n`;
+        body += `${'DELTA ROLLING:'.padEnd(labelWidth)} ${formatNumber(displayData.deltaRollingSaldato)}\n`;
+        body += '\n'; 
+        body += `${'WO TGT:'.padEnd(labelWidth)} ${formatNumber(displayData.woTgt)}\n`;
+        body += `${'WO CY:'.padEnd(labelWidth)} ${formatNumber(displayData.woCy)}\n`;
+        body += `${'DELTA ROLLING:'.padEnd(labelWidth)} ${formatNumber(displayData.deltaRollingWo)}\n`;
+        body += '\n';
+        body += `${'Saldato vs TARGET:'.padEnd(labelWidth)} ${displayData.percSaldatoVsTarget.toFixed(0)}%\n\n`;
+        // --- FINE NUOVO BLOCCO ---
+
         if (datiOggi.venditeDelGiorno.length > 0) {
             body += `--- DETTAGLIO VENDITE COMMISSIONATE (WO) ---\n\n`;
-
-            const venditoreWidth = 20;
-            const woWidth = 15;
-            const tipoWidth = 15;
-            const lenteWidth = 15;
-            const trattamentiWidth = 35;
-            const importoWidth = 20;
-
-            const header =
-                'Venditore'.padEnd(venditoreWidth) +
-                'N. WO'.padEnd(woWidth) +
-                'Tipo'.padEnd(tipoWidth) +
-                'Lente'.padEnd(lenteWidth) +
-                'Trattamenti'.padEnd(trattamentiWidth) +
-                'Importo'.padEnd(importoWidth);
+            const header = 'Venditore'.padEnd(20) + 'N. WO'.padEnd(15) + 'Tipo'.padEnd(15) + 'Lente'.padEnd(15) + 'Trattamenti'.padEnd(35) + 'Importo'.padEnd(20);
             body += header + '\n';
             body += '-'.repeat(header.length) + '\n';
-
             datiOggi.venditeDelGiorno.forEach(v => {
-                const importoStr = `${(v.importo || 0).toFixed(2)} Euro`; // Sostituito € con Euro
+                const importoStr = `${(v.importo || 0).toFixed(2)} Euro`;
                 const trattamentiStr = (v.trattamenti || []).join(', ') || 'Nessuno';
-
-                const row =
-                    (v.venditore || 'N/D').padEnd(venditoreWidth) +
-                    (v.numero_ordine || 'N/D').padEnd(woWidth) +
-                    (v.ordine_lente || 'N/D').padEnd(tipoWidth) +
-                    (v.tipo_lente || 'N/D').padEnd(lenteWidth) +
-                    trattamentiStr.padEnd(trattamentiWidth) +
-                    importoStr.padEnd(importoWidth);
+                const row = (v.venditore || 'N/D').padEnd(20) + (v.numero_ordine || 'N/D').padEnd(15) + (v.ordine_lente || 'N/D').padEnd(15) + (v.tipo_lente || 'N/D').padEnd(15) + trattamentiStr.padEnd(35) + importoStr.padEnd(20);
                 body += row + '\n';
             });
             body += '\n';
         }
-
         body += `Saluti,\nIl Sistema Gestionale`;
-        // --- FINE BLOCCO EMAIL MODIFICATO ---
 
         const mailtoLink = `mailto:${selectedEmails.join(',')}?subject=Report Chiusura Giornaliera&body=${encodeURIComponent(body)}`;
         window.open(mailtoLink, '_blank');
@@ -2194,24 +2289,47 @@ const InvioChiusura = ({ vendite, emailAmministrazioni, onClose }) => {
     };
 
     return (
-        <Modal isOpen={true} onClose={onClose} title="Invio Report Chiusura Giornaliera" size="max-w-4xl">
+        <Modal isOpen={true} onClose={onClose} title="Invio Report Chiusura Giornaliera" size="max-w-5xl">
             <form onSubmit={handleSend}>
-                <div className="mb-4">
-                    <label className="font-bold">1. Seleziona Destinatari</label>
-                    <div className="p-2 border rounded-md mt-2 max-h-32 overflow-y-auto">
-                        {emailAmministrazioni.map(e => (
-                            <label key={e.id} className="flex items-center p-1">
-                                <input type="checkbox" value={e.email} onChange={(evt) => {
-                                    if (evt.target.checked) setSelectedEmails([...selectedEmails, e.email]);
-                                    else setSelectedEmails(selectedEmails.filter(em => em !== e.email));
-                                }} className="mr-2" />
-                                {e.nomeContatto} ({e.email})
-                            </label>
-                        ))}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div>
+                        <label className="font-bold">1. Seleziona Destinatari</label>
+                        <div className="p-2 border rounded-md mt-2 max-h-60 overflow-y-auto bg-gray-50">
+                            {emailAmministrazioni.map(e => (
+                                <label key={e.id} className="flex items-center p-1">
+                                    <input type="checkbox" value={e.email} onChange={(evt) => {
+                                        if (evt.target.checked) setSelectedEmails([...selectedEmails, e.email]);
+                                        else setSelectedEmails(selectedEmails.filter(em => em !== e.email));
+                                    }} className="mr-2" />
+                                    {e.nomeContatto} ({e.email})
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+                    
+                    <div className="bg-gray-100 p-2 rounded-lg border border-gray-200">
+                         <h3 className="font-semibold text-gray-800 text-center border-b border-blue-500 pb-1 mb-2 text-sm">
+                             {new Date().toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                         </h3>
+                         <div className="space-y-1 text-xs font-sans">
+                            <div className="flex justify-between items-center px-1"><span className="font-medium text-gray-600">Saldato TGT</span><span className="font-bold text-sm">{displayData.saldatoTgt.toLocaleString('it-IT', { maximumFractionDigits: 0 })}</span></div>
+                            <div className="flex justify-between items-center px-1"><span className="font-medium text-gray-600">Saldato CY</span><span className="font-bold text-sm">{displayData.saldatoCy.toLocaleString('it-IT', { maximumFractionDigits: 0 })}</span></div>
+                            <div className="flex justify-between items-center px-1"><span className="font-medium text-gray-600">DELTA ROLLING</span><span className={`font-bold text-sm ${displayData.deltaRollingSaldato >= 0 ? 'text-green-600' : 'text-red-600'}`}>{displayData.deltaRollingSaldato.toLocaleString('it-IT', { maximumFractionDigits: 0 })}</span></div>
+                            <div className="pt-1"></div>
+                            <div className="flex justify-between items-center px-1"><span className="font-medium text-gray-600">WO TGT</span><span className="font-bold text-sm">{displayData.woTgt.toLocaleString('it-IT', { maximumFractionDigits: 0 })}</span></div>
+                            <div className="flex justify-between items-center px-1"><span className="font-medium text-gray-600">WO CY</span><span className="font-bold text-sm">{displayData.woCy.toLocaleString('it-IT', { maximumFractionDigits: 0 })}</span></div>
+                            <div className="flex justify-between items-center px-1"><span className="font-medium text-gray-600">DELTA ROLLING</span><span className={`font-bold text-sm ${displayData.deltaRollingWo >= 0 ? 'text-green-600' : 'text-red-600'}`}>{displayData.deltaRollingWo.toLocaleString('it-IT', { maximumFractionDigits: 0 })}</span></div>
+                            <div className="pt-1"></div>
+                            <div className="flex justify-between items-center p-1 bg-gray-300 rounded-md mt-1">
+                                <span className="font-bold text-gray-800 text-sm">Saldato vs TARGET</span>
+                                <span className={`font-bold text-sm ${displayData.percSaldatoVsTarget >= 0 ? 'text-green-600' : 'text-red-600'}`}>{displayData.percSaldatoVsTarget.toFixed(0)}%</span>
+                            </div>
+                         </div>
                     </div>
                 </div>
+
                 <div className="mb-4">
-                    <strong className="font-bold">2. Dati Calcolati (Oggi)</strong>
+                    <strong className="font-bold">2. Dati Calcolati da WO (Work Order) di Oggi</strong>
                     <div className="grid grid-cols-3 gap-4 p-2 bg-gray-50 rounded-md mt-2">
                         <p><strong>Totale WO:</strong> {datiOggi.sommario.totaleWO.toFixed(2)} €</p>
                         <p><strong>Primi:</strong> {datiOggi.sommario.primiOrdini}</p>
@@ -2252,12 +2370,12 @@ const InvioChiusura = ({ vendite, emailAmministrazioni, onClose }) => {
                 </div>
 
                 <div className="mb-4">
-                    <strong className="font-bold">4. Inserisci Totali Manuali</strong>
+                    <strong className="font-bold">4. Inserisci Totali Manuali di Cassa</strong>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-2">
-                        <div><label>Fatturato Cassa (€)</label><Input type="number" name="fatturato" step="0.01" required /></div>
-                        <div><label>N. Pacchetti LAC</label><Input type="number" name="pacchetti" /></div>
-                        <div><label>N. Occhiali Sole</label><Input type="number" name="sole" /></div>
-                        <div><label>Valore Sole (€)</label><Input type="number" name="valoreSole" step="0.01" /></div>
+                        <div><label>Fatturato Cassa (€)</label><Input type="number" name="fatturato" value={manualInputs.fatturato} onChange={handleInputChange} step="0.01" required /></div>
+                        <div><label>N. Pacchetti LAC</label><Input type="number" name="pacchetti" value={manualInputs.pacchetti} onChange={handleInputChange} /></div>
+                        <div><label>N. Occhiali Sole</label><Input type="number" name="sole" value={manualInputs.sole} onChange={handleInputChange} /></div>
+                        <div><label>Valore Sole (€)</label><Input type="number" name="valoreSole" value={manualInputs.valoreSole} onChange={handleInputChange} step="0.01" /></div>
                     </div>
                 </div>
                 <div className="flex justify-end gap-4 pt-4 border-t">
@@ -2715,7 +2833,7 @@ export default function App() {
     const renderSection = () => {
         switch (activeSection) {
             case 'dashboard': return <Dashboard vendite={vendite} riparazioni={riparazioni} obiettivi={obiettivi} onNavigate={handleNavigation} />;
-            case 'amministrazione': return <Amministrazione venditori={venditori} emailAmministrazioni={emailAmministrazioni} vendite={vendite} />;
+            case 'amministrazione': return <Amministrazione venditori={venditori} emailAmministrazioni={emailAmministrazioni} vendite={vendite} datiMensiliRaw={datiMensiliRaw} />;
             case 'laboratorio': return <Laboratorio vendite={vendite} venditori={venditori} riparazioni={riparazioni} contatti={contatti} initialSubView={activeSubView || 'ricerca'} />;
             case 'contattologia': return <Contattologia contatti={contatti} initialAction={activeSubView} onActionComplete={() => setActiveSubView(null)} />;
             default: return <Dashboard vendite={vendite} riparazioni={riparazioni} obiettivi={obiettivi} onNavigate={handleNavigation} />;
