@@ -1856,59 +1856,81 @@ const Laboratorio = ({ vendite, venditori, riparazioni, contatti, initialSubView
 };
 
 
+//// ===================================================================================
+// --- SEZIONE AMMINISTRAZIONE (MODIFICATA) ---
 // ===================================================================================
-// --- SEZIONE AMMINISTRAZIONE ---
-// ===================================================================================
-const Amministrazione = ({ venditori, emailAmministrazioni, vendite, datiMensiliRaw }) => { // <-- NOVITÀ: riceve datiMensiliRaw
+const Amministrazione = ({ venditori, emailAmministrazioni, vendite, datiMensiliRaw }) => {
     const [subView, setSubView] = React.useState('menu');
     const [isGestioneModalOpen, setIsGestioneModalOpen] = React.useState(false);
     const [isCassettoModalOpen, setIsCassettoModalOpen] = React.useState(false);
 
-    // --- NOVITÀ: Logica per calcolare i dati di chiusura giornaliera ---
+    // --- MODIFICA: Logica di calcolo aggiornata per includere i dati del giorno precedente ---
     const datiChiusuraGiornaliera = React.useMemo(() => {
         const oggi = new Date();
         const periodYYYYMM = `${oggi.getFullYear()}-${String(oggi.getMonth() + 1).padStart(2, '0')}`;
         const datiMeseCorrente = datiMensiliRaw.find(d => d.id === periodYYYYMM);
 
-        if (!datiMeseCorrente) {
-            return { saldatoTgt: 0, saldatoCy: 0, woTgt: 0, woCy: 0 };
-        }
+        const defaultValues = {
+            saldatoTgt: 0, saldatoCy: 0, woTgt: 0, woCy: 0,
+            deltaRollingSaldatoPrev: 0, deltaRollingWoPrev: 0,
+            saldatoCyPrev: 0, woCyPrev: 0
+        };
+
+        if (!datiMeseCorrente) return defaultValues;
 
         const oggiStr = `${String(oggi.getDate()).padStart(2, '0')}/${String(oggi.getMonth() + 1).padStart(2, '0')}/${oggi.getFullYear()}`;
         const dayIndex = datiMeseCorrente.dateHeaders.findIndex(h => h === oggiStr);
 
-        if (dayIndex === -1) {
-            return { saldatoTgt: 0, saldatoCy: 0, woTgt: 0, woCy: 0 };
-        }
+        if (dayIndex === -1) return defaultValues;
 
+        // Funzione per trovare una riga di metrica per nome
         const getMetricRow = (name) => datiMeseCorrente.metrics.find(m => m.name.toLowerCase() === name.toLowerCase());
+        
+        // --- NOVITÀ: Trova le righe "DELTA ROLLING". NOTA: Si assume che la prima sia per Saldato e la seconda per WO.
+        // Per maggiore robustezza, sarebbe meglio rinominarle nel template Excel (es. "Delta Rolling Saldato")
+        const deltaRollingRows = datiMeseCorrente.metrics.filter(m => m.name.toLowerCase() === 'delta rolling');
+        const deltaRollingSaldatoRow = deltaRollingRows[0];
+        const deltaRollingWoRow = deltaRollingRows[1];
 
+        // Recupera le altre metriche
         const saldatoTgtRow = getMetricRow('saldato tgt');
         const woTgtRow = getMetricRow('wo tgt');
         const saldatoCyRow = getMetricRow('saldato cy');
         const woCyRow = getMetricRow('wo cy');
-
-        // Valori target del giorno
+        
+        // Valori target del giorno corrente
         const saldatoTgt = saldatoTgtRow?.values[dayIndex] || 0;
         const woTgt = woTgtRow?.values[dayIndex] || 0;
 
-        // Calcola i totali "rolling" fino al giorno corrente (incluso)
-        const calculateRollingTotal = (row) => {
-            if (!row) return 0;
-            return row.values.slice(0, dayIndex + 1).reduce((acc, val) => acc + (parseFloat(val) || 0), 0);
+        // --- NOVITÀ: Se non è il primo giorno del mese, recupera i valori del giorno precedente ---
+        let deltaRollingSaldatoPrev = 0;
+        let deltaRollingWoPrev = 0;
+        let saldatoCyPrev = 0;
+        let woCyPrev = 0;
+
+        if (dayIndex > 0) {
+            const prevDayIndex = dayIndex - 1;
+            deltaRollingSaldatoPrev = parseFloat(deltaRollingSaldatoRow?.values[prevDayIndex]) || 0;
+            deltaRollingWoPrev = parseFloat(deltaRollingWoRow?.values[prevDayIndex]) || 0;
+            // Calcola il cumulativo fino al giorno prima
+            saldatoCyPrev = saldatoCyRow?.values.slice(0, prevDayIndex + 1).reduce((acc, val) => acc + (parseFloat(val) || 0), 0) || 0;
+            woCyPrev = woCyRow?.values.slice(0, prevDayIndex + 1).reduce((acc, val) => acc + (parseFloat(val) || 0), 0) || 0;
+        }
+        
+        const saldatoCy = saldatoCyRow?.values.slice(0, dayIndex + 1).reduce((acc, val) => acc + (parseFloat(val) || 0), 0);
+        const woCy = woCyRow?.values.slice(0, dayIndex + 1).reduce((acc, val) => acc + (parseFloat(val) || 0), 0);
+        
+        return {
+            saldatoTgt, woTgt, saldatoCy, woCy,
+            deltaRollingSaldatoPrev, deltaRollingWoPrev,
+            saldatoCyPrev, woCyPrev
         };
-
-        const saldatoCy = calculateRollingTotal(saldatoCyRow);
-        const woCy = calculateRollingTotal(woCyRow);
-
-        return { saldatoTgt, saldatoCy, woTgt, woCy };
     }, [datiMensiliRaw]);
-    // --- FINE NOVITÀ ---
+    // --- FINE MODIFICA ---
 
     const subViewComponents = {
         datiMensili: <DatiMensili />,
         statistiche: <StatisticheAvanzate vendite={vendite} venditori={venditori} />,
-        // --- NOVITÀ: passa i dati calcolati a InvioChiusura ---
         chiusura: <InvioChiusura vendite={vendite} emailAmministrazioni={emailAmministrazioni} onClose={() => setSubView('menu')} datiChiusuraGiornaliera={datiChiusuraGiornaliera} />,
         pdf: <FiltraPdf vendite={vendite} venditori={venditori} onClose={() => setSubView('menu')} />,
     };
@@ -2177,19 +2199,21 @@ const InvioChiusura = ({ vendite, emailAmministrazioni, onClose, datiChiusuraGio
     const displayData = React.useMemo(() => {
         const saldatoTgt = parseFloat(datiChiusuraGiornaliera?.saldatoTgt) || 0;
         const woTgt = parseFloat(datiChiusuraGiornaliera?.woTgt) || 0;
-        
+        const deltaRollingSaldatoPrev = parseFloat(datiChiusuraGiornaliera?.deltaRollingSaldatoPrev) || 0;
+        const deltaRollingWoPrev = parseFloat(datiChiusuraGiornaliera?.deltaRollingWoPrev) || 0;
+
         const woCy = datiOggi.sommario.totaleWO;
-
         const manualFatturatoValue = parseFloat(manualInputs.fatturato);
-        const saldatoCy = !isNaN(manualFatturatoValue) 
-            ? manualFatturatoValue 
-            : (parseFloat(datiChiusuraGiornaliera?.saldatoCy) || 0);
+        const saldatoCy = !isNaN(manualFatturatoValue) ? manualFatturatoValue : 0; 
 
-        const deltaRollingSaldato = saldatoCy - saldatoTgt;
-        const deltaRollingWo = woCy - woTgt;
+        const dailyDeltaSaldato = saldatoCy - saldatoTgt;
+        const dailyDeltaWo = woCy - woTgt;
+
+        const deltaRollingSaldato = deltaRollingSaldatoPrev + dailyDeltaSaldato;
+        const deltaRollingWo = deltaRollingWoPrev + dailyDeltaWo;
         
-        const percSaldatoVsTarget = saldatoTgt !== 0 ? (deltaRollingSaldato / saldatoTgt) * 100 : 0;
-
+        const percSaldatoVsTarget = saldatoTgt !== 0 ? (dailyDeltaSaldato / saldatoTgt) * 100 : 0;
+        
         return { saldatoTgt, saldatoCy, deltaRollingSaldato, woTgt, woCy, deltaRollingWo, percSaldatoVsTarget };
     }, [datiChiusuraGiornaliera, manualInputs, datiOggi]);
     
@@ -2217,19 +2241,43 @@ const InvioChiusura = ({ vendite, emailAmministrazioni, onClose, datiChiusuraGio
                 const adminData = docSnap.data();
                 const oggiStr = `${String(oggi.getDate()).padStart(2, '0')}/${String(oggi.getMonth() + 1).padStart(2, '0')}/${oggi.getFullYear()}`;
                 const dayColumnIndex = adminData.dateHeaders.findIndex(h => h === oggiStr);
+
                 if (dayColumnIndex !== -1) {
-                    const metricheDaAggiornare = {
-                        'saldato cy': parseFloat(fatturato) || 0,
-                        'wo cy': datiOggi.sommario.totaleWO,
-                        'first act': datiOggi.sommario.primiOrdini,
-                        'second act': datiOggi.sommario.secondiOrdini
-                    };
+                    // --- INIZIO MODIFICA ---
+                    // La logica di aggiornamento viene resa più esplicita per gestire le due righe "DELTA ROLLING"
+                    let deltaRollingCount = 0; // Contatore per distinguere le righe "DELTA ROLLING"
+                    
                     adminData.metrics.forEach(metric => {
                         const metricNameLower = metric.name.trim().toLowerCase();
-                        if (metricheDaAggiornare.hasOwnProperty(metricNameLower)) {
-                            metric.values[dayColumnIndex] = metricheDaAggiornare[metricNameLower];
+
+                        switch(metricNameLower) {
+                            case 'saldato cy':
+                                metric.values[dayColumnIndex] = parseFloat(fatturato) || 0;
+                                break;
+                            case 'wo cy':
+                                metric.values[dayColumnIndex] = datiOggi.sommario.totaleWO;
+                                break;
+                            case 'first act':
+                                metric.values[dayColumnIndex] = datiOggi.sommario.primiOrdini;
+                                break;
+                            case 'second act':
+                                metric.values[dayColumnIndex] = datiOggi.sommario.secondiOrdini;
+                                break;
+                            case 'delta rolling':
+                                if (deltaRollingCount === 0) { // La prima riga è per il Saldato
+                                    metric.values[dayColumnIndex] = displayData.deltaRollingSaldato;
+                                } else if (deltaRollingCount === 1) { // La seconda riga è per il WO
+                                    metric.values[dayColumnIndex] = displayData.deltaRollingWo;
+                                }
+                                deltaRollingCount++; // Incrementa il contatore per la prossima riga
+                                break;
+                            default:
+                                // Nessuna azione per le altre metriche
+                                break;
                         }
                     });
+                    // --- FINE MODIFICA ---
+
                     await setDoc(getDocumentRef('datiMensili', periodYYYYMM), adminData);
                     toast.success("Dati di chiusura salvati nel gestionale.");
                 }
@@ -2249,8 +2297,6 @@ const InvioChiusura = ({ vendite, emailAmministrazioni, onClose, datiChiusuraGio
             body += `Pacchetti LAC venduti: ${parseInt(pacchetti, 10)}.\n`;
         }
         
-        // --- NUOVO BLOCCO RIEPILOGO ---
-        // Questo codice crea una versione testuale del riquadro di riepilogo
         const formatNumber = (num) => (num || 0).toLocaleString('it-IT', { maximumFractionDigits: 0 });
         const labelWidth = 20;
 
@@ -2264,7 +2310,6 @@ const InvioChiusura = ({ vendite, emailAmministrazioni, onClose, datiChiusuraGio
         body += `${'DELTA ROLLING:'.padEnd(labelWidth)} ${formatNumber(displayData.deltaRollingWo)}\n`;
         body += '\n';
         body += `${'Saldato vs TARGET:'.padEnd(labelWidth)} ${displayData.percSaldatoVsTarget.toFixed(0)}%\n\n`;
-        // --- FINE NUOVO BLOCCO ---
 
         if (datiOggi.venditeDelGiorno.length > 0) {
             body += `--- DETTAGLIO VENDITE COMMISSIONATE (WO) ---\n\n`;
