@@ -855,7 +855,7 @@ const InviaDatiCassettoModal = ({ isOpen, onClose, vendite, emailAmministrazioni
             return;
         }
 
-        let body = `Riepilogo dati per cassetto fiscale fino al ${new Date(selectedDate).toLocaleDateString('it-IT')}:\n\n`;
+        let body = `Riepilogo dati per cassetto fino al ${new Date(selectedDate).toLocaleDateString('it-IT')}:\n\n`;
         body += `ORDINI IN CORSO:\n`;
         body += `  - Totale Valore: ${calculatedData.inCorso.totale.toFixed(2)} €\n`;
         body += `  - Numero Schede: ${calculatedData.inCorso.count}\n\n`;
@@ -864,14 +864,14 @@ const InviaDatiCassettoModal = ({ isOpen, onClose, vendite, emailAmministrazioni
         body += `  - Numero Schede: ${calculatedData.pronti.count}\n\n`;
         body += `Cordiali Saluti,\nIl Sistema Gestionale`;
 
-        const mailtoLink = `mailto:${selectedEmails.join(',')}?subject=Riepilogo Dati Cassetto Fiscale&body=${encodeURIComponent(body)}`;
+        const mailtoLink = `mailto:${selectedEmails.join(',')}?subject=Riepilogo Dati Cassetto&body=${encodeURIComponent(body)}`;
         window.open(mailtoLink, '_blank');
         toast.success("Email pronta nel client di posta!");
         onClose();
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Dati per Cassetto Fiscale" size="max-w-3xl">
+        <Modal isOpen={isOpen} onClose={onClose} title="Dati per Cassetto" size="max-w-3xl">
             <AlertModal {...alertState} onClose={() => setAlertState({ ...alertState, isOpen: false })} />
             <div className="space-y-6">
                  <div>
@@ -1282,9 +1282,8 @@ const Laboratorio = ({ vendite, venditori, riparazioni, contatti, initialSubView
 
     const renderMenu = () => (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Button onClick={() => setSubView('ricerca')} variant="primary" icon={Search}>Ricerca Globale</Button>
             <Button onClick={() => setSubView('carica')} variant="success" icon={PlusCircle}>Carica Vendita</Button>
-            <Button onClick={() => setSubView('caricaRiparazione')} variant="success" icon={PlusCircle}>Carica Riparazione/Ordine</Button>
+            <Button onClick={() => setSubView('caricaRiparazione')} variant="teal" icon={PlusCircle}>Carica Riparazione/Ordine</Button>
             <Button onClick={() => setSubView('elimina')} variant="danger" icon={Trash2} className="md:col-span-2">Elimina Vendita</Button>
         </div>
     );
@@ -1804,7 +1803,22 @@ const Laboratorio = ({ vendite, venditori, riparazioni, contatti, initialSubView
         menu: renderMenu()
     };
     
-    const renderSubView = () => subViewComponents[subView] || <RicercaGlobale />;
+    const renderSubView = () => {
+        // Se la subView non è la ricerca, mostra un pulsante per tornare indietro
+        if (subView !== 'ricerca') {
+            return (
+                <div>
+                    <Button onClick={() => setSubView('ricerca')} variant="neutral" icon={ChevronLeft} className="mb-6">
+                        Torna alla Ricerca
+                    </Button>
+                    {subViewComponents[subView] || <RicercaGlobale />}
+                </div>
+            );
+        }
+        // Altrimenti, mostra solo la vista (in questo caso la ricerca, che ha già il suo layout)
+        return subViewComponents[subView] || <RicercaGlobale />;
+    };
+
 
     return (
         <div className="bg-white p-6 rounded-lg shadow-lg">
@@ -1828,12 +1842,12 @@ const Laboratorio = ({ vendite, venditori, riparazioni, contatti, initialSubView
 
             <div className="flex justify-between items-center border-b pb-4 mb-6">
                 <div className="flex items-center gap-4">
-                    {subView !== 'ricerca' && (
-                        <Button onClick={() => setSubView('ricerca')} variant="neutral" icon={ChevronLeft}>Torna alla Ricerca</Button>
-                    )}
-                    <h2 className="text-3xl font-bold text-gray-800">Laboratorio</h2>
+                     <h2 className="text-3xl font-bold text-gray-800">Laboratorio</h2>
                 </div>
                 <div className="flex items-center gap-4">
+                    {subView === 'ricerca' && 
+                        <Button onClick={() => setSubView('menu')} variant="primary" icon={List}>Menu Azioni</Button>
+                    }
                     <Button onClick={() => setIsMultiStatusModalOpen(true)} variant="neutral" icon={CopyCheck}>Modifica Stato Multiplo</Button>
                     <div className="bg-blue-50 p-3 rounded-lg flex items-center gap-3">
                         <label className="font-semibold text-blue-800">Consegna Rapida:</label>
