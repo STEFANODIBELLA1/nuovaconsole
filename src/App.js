@@ -98,6 +98,48 @@ const useFirestoreCollection = (collectionName, isAuthReady, options = {}) => {
     return data;
 };
 
+// NUOVO HELPER PER LA GENERAZIONE DI PDF
+const generateSalesPdf = (salesData, title = 'Report Vendite Dettagliato') => {
+    if (salesData.length === 0) {
+        toast.error("Nessun dato di vendita da esportare in PDF.");
+        return;
+    }
+    if (!window.jspdf || !window.jspdf.jsPDF) {
+        toast.error("Libreria PDF (jsPDF) non disponibile.");
+        return;
+    }
+
+    try {
+        const doc = new window.jspdf.jsPDF({ orientation: 'landscape' });
+        doc.text(title, 14, 16);
+        const body = salesData.map(v => [
+            v.data,
+            v.cliente,
+            v.venditore,
+            v.tipo_lente,
+            v.ordine_lente,
+            v.numero_ordine,
+            (v.importo || 0).toFixed(2) + ' €',
+            (v.trattamenti || []).join(', ')
+        ]);
+
+        doc.autoTable({
+            head: [['Data', 'Cliente', 'Venditore', 'Tipo Lente', 'Ordine', 'N. Ordine', 'Importo', 'Trattamenti']],
+            body: body,
+            startY: 20,
+            theme: 'striped',
+            styles: { fontSize: 8 }
+        });
+
+        const fileName = `Dettaglio_Vendite_${new Date().toISOString().slice(0, 10)}.pdf`;
+        doc.save(fileName);
+        toast.success("PDF con i dettagli scaricato!");
+    } catch (error) {
+        console.error("Errore durante la generazione del PDF:", error);
+        toast.error(`Impossibile generare il PDF: ${error.message}`);
+    }
+};
+
 // --- COMPONENTI UI GENERICI ---
 const Modal = ({ isOpen, onClose, title, children, size = 'max-w-lg', zIndex = 'z-50' }) => {
     if (!isOpen) return null;
@@ -2243,6 +2285,13 @@ const InvioChiusura = ({ vendite, emailAmministrazioni, onClose, datiChiusuraGio
             return;
         }
         setIsSending(true);
+        
+        // Se ci sono vendite, chiedi all'utente se vuole scaricare l'allegato
+        if (datiOggi.venditeDelGiorno.length > 0) {
+            if (window.confirm("Vuoi anche scaricare il PDF con il dettaglio delle vendite da allegare all'email?")) {
+                generateSalesPdf(datiOggi.venditeDelGiorno, `Dettaglio Vendite del ${new Date().toLocaleDateString('it-IT')}`);
+            }
+        }
 
         const { fatturato, pacchetti, sole, valoreSole } = manualInputs;
 
@@ -2257,9 +2306,7 @@ const InvioChiusura = ({ vendite, emailAmministrazioni, onClose, datiChiusuraGio
                 const dayColumnIndex = adminData.dateHeaders.findIndex(h => h === oggiStr);
 
                 if (dayColumnIndex !== -1) {
-                    // --- INIZIO MODIFICA ---
-                    // La logica di aggiornamento viene resa più esplicita per gestire le due righe "DELTA ROLLING"
-                    let deltaRollingCount = 0; // Contatore per distinguere le righe "DELTA ROLLING"
+                    let deltaRollingCount = 0;
                     
                     adminData.metrics.forEach(metric => {
                         const metricNameLower = metric.name.trim().toLowerCase();
@@ -2278,19 +2325,17 @@ const InvioChiusura = ({ vendite, emailAmministrazioni, onClose, datiChiusuraGio
                                 metric.values[dayColumnIndex] = datiOggi.sommario.secondiOrdini;
                                 break;
                             case 'delta rolling':
-                                if (deltaRollingCount === 0) { // La prima riga è per il Saldato
+                                if (deltaRollingCount === 0) {
                                     metric.values[dayColumnIndex] = displayData.deltaRollingSaldato;
-                                } else if (deltaRollingCount === 1) { // La seconda riga è per il WO
+                                } else if (deltaRollingCount === 1) {
                                     metric.values[dayColumnIndex] = displayData.deltaRollingWo;
                                 }
-                                deltaRollingCount++; // Incrementa il contatore per la prossima riga
+                                deltaRollingCount++;
                                 break;
                             default:
-                                // Nessuna azione per le altre metriche
                                 break;
                         }
                     });
-                    // --- FINE MODIFICA ---
 
                     await setDoc(getDocumentRef('datiMensili', periodYYYYMM), adminData);
                     toast.success("Dati di chiusura salvati nel gestionale.");
@@ -2324,25 +2369,12 @@ const InvioChiusura = ({ vendite, emailAmministrazioni, onClose, datiChiusuraGio
         body += `${'DELTA ROLLING:'.padEnd(labelWidth)} ${formatNumber(displayData.deltaRollingWo)}\n`;
         body += '\n';
         body += `${'Saldato vs TARGET:'.padEnd(labelWidth)} ${displayData.percSaldatoVsTarget.toFixed(0)}%\n\n`;
-
-        if (datiOggi.venditeDelGiorno.length > 0) {
-            body += `--- DETTAGLIO VENDITE COMMISSIONATE (WO) ---\n\n`;
-            const header = 'Venditore'.padEnd(20) + 'N. WO'.padEnd(15) + 'Tipo'.padEnd(15) + 'Lente'.padEnd(15) + 'Trattamenti'.padEnd(35) + 'Importo'.padEnd(20);
-            body += header + '\n';
-            body += '-'.repeat(header.length) + '\n';
-            datiOggi.venditeDelGiorno.forEach(v => {
-                const importoStr = `${(v.importo || 0).toFixed(2)} Euro`;
-                const trattamentiStr = (v.trattamenti || []).join(', ') || 'Nessuno';
-                const row = (v.venditore || 'N/D').padEnd(20) + (v.numero_ordine || 'N/D').padEnd(15) + (v.ordine_lente || 'N/D').padEnd(15) + (v.tipo_lente || 'N/D').padEnd(15) + trattamentiStr.padEnd(35) + importoStr.padEnd(20);
-                body += row + '\n';
-            });
-            body += '\n';
-        }
+        
         body += `Saluti,\nIl Sistema Gestionale`;
 
         const mailtoLink = `mailto:${selectedEmails.join(',')}?subject=Report Chiusura Giornaliera&body=${encodeURIComponent(body)}`;
         window.open(mailtoLink, '_blank');
-        toast.success("Il client di posta è stato aperto.");
+        toast.success("Il client di posta è stato aperto. Se hai scelto di scaricare il PDF, ricordati di allegarlo.");
         setIsSending(false);
         onClose();
     };
@@ -2483,27 +2515,8 @@ const FiltraPdf = ({ vendite, venditori, onClose }) => {
 
     const handleGeneratePdf = (e) => {
         e.preventDefault();
-        if (!window.jspdf || !window.jspdf.jsPDF) {
-            toast.error("Libreria PDF non disponibile.");
-            return;
-        }
-
         const filteredVendite = getFilteredData(e.target);
-
-        if (filteredVendite.length === 0) {
-            toast.error("Nessuna vendita trovata per i filtri selezionati.");
-            return;
-        }
-
-        const doc = new window.jspdf.jsPDF({ orientation: 'landscape' });
-        doc.text(`Report Vendite Filtrato`, 14, 16);
-        const body = filteredVendite.map(v => [v.data, v.cliente, v.venditore, v.tipo_lente, v.ordine_lente, v.rif_vaschetta, v.numero_ordine, v.stato_ordine, (v.importo || 0).toFixed(2), (v.trattamenti || []).join(', ')]);
-        doc.autoTable({
-            head: [['Data', 'Cliente', 'Venditore', 'Tipo Lente', 'Ordine Lente', 'Rif.Vaschetta', 'N. Ordine', 'Stato', 'Importo (€)', 'Trattamenti']],
-            body: body, startY: 20, theme: 'striped', styles: { fontSize: 7 }
-        });
-        doc.save(`Report_WO_Filtrato_${new Date().toISOString().slice(0, 10)}.pdf`);
-        toast.success("PDF generato con successo!");
+        generateSalesPdf(filteredVendite); // Usa la funzione helper
         onClose();
     };
     
