@@ -243,7 +243,7 @@ const Button = ({ onClick, children, className = '', icon: Icon, type = "button"
         warning: 'bg-orange-500 hover:bg-orange-600',
         indigo: 'bg-indigo-500 hover:bg-indigo-600',
         teal: 'bg-teal-500 hover:bg-teal-600',
-        sky: 'bg-sky-500 hover:bg-sky-600',
+        sky: 'bg-sky-500 hover:bg-sky-500',
         slate: 'bg-slate-600 hover:bg-slate-700',
     };
     
@@ -472,10 +472,23 @@ const AnalisiVisiva = ({ vendite, venditori }) => {
         endDate: today.toISOString().split('T')[0],
         venditore: 'tutti',
     });
+    
+    // --- NUOVO: State per le esclusioni dal calcolo della media ---
+    const [esclusioni, setEsclusioni] = React.useState({
+        escludiSos: false,
+        escludiPrimi: false,
+        escludiSecondi: false,
+    });
 
     const handleFilterChange = (e) => {
         const { name, value } = e.target;
         setFiltri(prev => ({ ...prev, [name]: value }));
+    };
+    
+    // --- NUOVO: Handler per i checkbox di esclusione ---
+    const handleEsclusioniChange = (e) => {
+        const { name, checked } = e.target;
+        setEsclusioni(prev => ({ ...prev, [name]: checked }));
     };
 
     const datiFiltrati = React.useMemo(() => {
@@ -495,14 +508,30 @@ const AnalisiVisiva = ({ vendite, venditori }) => {
     }, [vendite, filtri]);
 
     const stats = React.useMemo(() => {
-        if (datiFiltrati.length === 0) {
-            return { totale: 0, count: 0, media: 0, primi: 0, secondi: 0, trattamenti: [] };
-        }
+        // --- MODIFICA: Applica i filtri di esclusione solo per il calcolo della media ---
+        const datiPerMedia = datiFiltrati.filter(v => {
+            if (esclusioni.escludiSos && (v.trattamenti || []).includes('Utilizzo SOS')) {
+                return false;
+            }
+            if (esclusioni.escludiPrimi && v.ordine_lente === 'Primo') {
+                return false;
+            }
+            if (esclusioni.escludiSecondi && v.ordine_lente === 'Secondo') {
+                return false;
+            }
+            return true;
+        });
 
+        // I calcoli generali (totale, conteggio) si basano sui dati filtrati per data/venditore
         const totale = datiFiltrati.reduce((acc, v) => acc + (v.importo || 0), 0);
         const count = datiFiltrati.length;
-        const media = count > 0 ? totale / count : 0;
 
+        // Il calcolo della media si basa sui dati ulteriormente filtrati dalle esclusioni
+        const totalePerMedia = datiPerMedia.reduce((acc, v) => acc + (v.importo || 0), 0);
+        const countPerMedia = datiPerMedia.length;
+        const media = countPerMedia > 0 ? totalePerMedia / countPerMedia : 0;
+        
+        // I dati per i grafici (primi/secondi, trattamenti) usano i dati filtrati originali
         const { primi, secondi } = datiFiltrati.reduce((acc, v) => {
             if (v.ordine_lente === 'Secondo') acc.secondi++;
             else acc.primi++;
@@ -518,7 +547,7 @@ const AnalisiVisiva = ({ vendite, venditori }) => {
         const trattamenti = Object.entries(conteggioTrattamenti).sort(([, a], [, b]) => b - a);
 
         return { totale, count, media, primi, secondi, trattamenti };
-    }, [datiFiltrati]);
+    }, [datiFiltrati, esclusioni]); // Aggiunta dipendenza 'esclusioni'
 
     const doughnutData = {
         labels: ['Primo Occhiale', 'Secondo Occhiale'],
@@ -611,6 +640,24 @@ const AnalisiVisiva = ({ vendite, venditori }) => {
                         </div>
                         <div className="bg-white p-6 rounded-lg shadow-md">
                             <Bar data={trattamentiData} options={trattamentiOptions} />
+                            {/* --- NUOVO: Sezione checkbox per esclusioni --- */}
+                            <div className="bg-yellow-50 p-4 rounded-lg shadow-inner mt-6 border border-yellow-200">
+                                <h4 className="text-md font-semibold mb-3 text-gray-800">Escludi dal calcolo del "Valore Medio Vendita"</h4>
+                                <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+                                    <label className="flex items-center cursor-pointer">
+                                        <input type="checkbox" name="escludiSos" checked={esclusioni.escludiSos} onChange={handleEsclusioniChange} className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 mr-2" />
+                                        Escludi "Utilizzo SOS"
+                                    </label>
+                                    <label className="flex items-center cursor-pointer">
+                                        <input type="checkbox" name="escludiPrimi" checked={esclusioni.escludiPrimi} onChange={handleEsclusioniChange} className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 mr-2" />
+                                        Escludi "Primo Occhiale"
+                                    </label>
+                                    <label className="flex items-center cursor-pointer">
+                                        <input type="checkbox" name="escludiSecondi" checked={esclusioni.escludiSecondi} onChange={handleEsclusioniChange} className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 mr-2" />
+                                        Escludi "Secondo Occhiale"
+                                    </label>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </>
