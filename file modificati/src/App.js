@@ -10,7 +10,7 @@ import {
     LayoutDashboard, FlaskConical, Contact, Settings,
     Trash2, PlusCircle, ChevronLeft, X, Send, Calendar, Filter, Download, List, BarChartHorizontal,
     AlertTriangle, CheckCircle, Archive, Eye, Edit, CopyCheck, Search, Clock, Users, FileDown, Beaker,
-    Trophy, Medal, BarChart2, DollarSign, Glasses, ShieldCheck, RefreshCw
+    Trophy, Medal, BarChart2, DollarSign, Glasses, ShieldCheck
 } from 'lucide-react';
 
 // --- IMPORT AGGIUNTI PER I GRAFICI E LE NOTIFICHE ---
@@ -21,6 +21,12 @@ import toast, { Toaster } from 'react-hot-toast'; // <-- NUOVO: LIBRERIA PER LE 
 
 // --- REGISTRAZIONE COMPONENTI CHART.JS ---
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement, ChartDataLabels);
+
+// --- NOTE SULLE DIPENDENZE ESTERNE ---
+// 1. SheetJS (XLSX): <script src="..."></script>
+// 2. jsPDF: <script src="..."></script>
+// 3. jsPDF-AutoTable: <script src="..."></script>
+// 4. Per le notifiche, è consigliabile installare 'react-hot-toast' via npm/yarn.
 
 // --- CONFIGURAZIONE FIREBASE ---
 const firebaseConfig = typeof __firebase_config !== 'undefined'
@@ -38,20 +44,17 @@ const firebaseConfig = typeof __firebase_config !== 'undefined'
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-
-// FORZIAMO IL PERCORSO PER RISOLVERE IL BUG DEGLI SCREENSHOT
-const appId = 'default-app-id';
-window.mioCodiceUtente = ''; // Variabile globale sicura per ricollegare il database
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // --- HELPERS E HOOKS FIREBASE ---
 const getCollectionRef = (collectionName) => {
-    const userId = window.mioCodiceUtente || auth.currentUser?.uid;
+    const userId = auth.currentUser?.uid;
     if (!userId) throw new Error("Utente non autenticato.");
     return collection(db, `artifacts/${appId}/users/${userId}/${collectionName}`);
 };
 
 const getDocumentRef = (collectionName, docId) => {
-    const userId = window.mioCodiceUtente || auth.currentUser?.uid;
+    const userId = auth.currentUser?.uid;
     if (!userId) throw new Error("Utente non autenticato.");
     return doc(db, `artifacts/${appId}/users/${userId}/${collectionName}`, docId);
 };
@@ -69,17 +72,14 @@ const useDebounce = (value, delay) => {
     return debouncedValue;
 };
 
-const useFirestoreCollection = (collectionName, isAuthReady, refreshTrigger = 0, options = {}) => {
+const useFirestoreCollection = (collectionName, isAuthReady, options = {}) => {
     const [data, setData] = React.useState([]);
     React.useEffect(() => {
         if (!isAuthReady || !auth.currentUser || !collectionName) {
             setData([]);
             return;
         }
-        const userId = window.mioCodiceUtente || auth.currentUser?.uid;
-        if (!userId) return;
-
-        const collectionPath = `artifacts/${appId}/users/${userId}/${collectionName}`;
+        const collectionPath = `artifacts/${appId}/users/${auth.currentUser.uid}/${collectionName}`;
         let q = query(collection(db, collectionPath));
 
         if (options.orderBy) {
@@ -94,7 +94,7 @@ const useFirestoreCollection = (collectionName, isAuthReady, refreshTrigger = 0,
             toast.error(`Errore caricamento dati: ${collectionName}`);
         });
         return () => unsubscribe();
-    }, [collectionName, isAuthReady, options.orderBy, options.orderDirection, refreshTrigger]);
+    }, [collectionName, isAuthReady, options.orderBy, options.orderDirection]);
     return data;
 };
 
@@ -206,6 +206,7 @@ const useConfirmation = (title = "Conferma Operazione") => {
                 try {
                     await onConfirm();
                 } finally {
+                    // La chiusura è gestita dal chiamante per dare tempo ai toast di apparire
                     setConfirmState({ isOpen: false, message: '', onConfirm: () => {}, isLoading: false });
                 }
             }
@@ -228,6 +229,8 @@ const useConfirmation = (title = "Conferma Operazione") => {
     return [ConfirmationDialog, requestConfirmation];
 };
 
+
+// --- NUOVO: Componente Button aggiornato con isLoading ---
 const Button = ({ onClick, children, className = '', icon: Icon, type = "button", disabled = false, variant = 'primary', isLoading = false }) => {
     const baseStyles = "flex items-center justify-center gap-2 px-4 py-2 text-white font-semibold rounded-lg shadow-md transition-all transform hover:scale-105";
     const disabledStyles = "opacity-50 cursor-not-allowed";
@@ -1964,6 +1967,7 @@ const Amministrazione = ({ venditori, emailAmministrazioni, vendite, datiMensili
     const [isGestioneModalOpen, setIsGestioneModalOpen] = React.useState(false);
     const [isCassettoModalOpen, setIsCassettoModalOpen] = React.useState(false);
 
+    // --- MODIFICA: Logica di calcolo aggiornata per includere i dati del giorno precedente ---
     const datiChiusuraGiornaliera = React.useMemo(() => {
         const oggi = new Date();
         const periodYYYYMM = `${oggi.getFullYear()}-${String(oggi.getMonth() + 1).padStart(2, '0')}`;
@@ -1982,20 +1986,26 @@ const Amministrazione = ({ venditori, emailAmministrazioni, vendite, datiMensili
 
         if (dayIndex === -1) return defaultValues;
 
+        // Funzione per trovare una riga di metrica per nome
         const getMetricRow = (name) => datiMeseCorrente.metrics.find(m => m.name.toLowerCase() === name.toLowerCase());
         
+        // --- NOVITÀ: Trova le righe "DELTA ROLLING". NOTA: Si assume che la prima sia per Saldato e la seconda per WO.
+        // Per maggiore robustezza, sarebbe meglio rinominarle nel template Excel (es. "Delta Rolling Saldato")
         const deltaRollingRows = datiMeseCorrente.metrics.filter(m => m.name.toLowerCase() === 'delta rolling');
         const deltaRollingSaldatoRow = deltaRollingRows[0];
         const deltaRollingWoRow = deltaRollingRows[1];
 
+        // Recupera le altre metriche
         const saldatoTgtRow = getMetricRow('saldato tgt');
         const woTgtRow = getMetricRow('wo tgt');
         const saldatoCyRow = getMetricRow('saldato cy');
         const woCyRow = getMetricRow('wo cy');
         
+        // Valori target del giorno corrente
         const saldatoTgt = saldatoTgtRow?.values[dayIndex] || 0;
         const woTgt = woTgtRow?.values[dayIndex] || 0;
 
+        // --- NOVITÀ: Se non è il primo giorno del mese, recupera i valori del giorno precedente ---
         let deltaRollingSaldatoPrev = 0;
         let deltaRollingWoPrev = 0;
         let saldatoCyPrev = 0;
@@ -2005,6 +2015,7 @@ const Amministrazione = ({ venditori, emailAmministrazioni, vendite, datiMensili
             const prevDayIndex = dayIndex - 1;
             deltaRollingSaldatoPrev = parseFloat(deltaRollingSaldatoRow?.values[prevDayIndex]) || 0;
             deltaRollingWoPrev = parseFloat(deltaRollingWoRow?.values[prevDayIndex]) || 0;
+            // Calcola il cumulativo fino al giorno prima
             saldatoCyPrev = saldatoCyRow?.values.slice(0, prevDayIndex + 1).reduce((acc, val) => acc + (parseFloat(val) || 0), 0) || 0;
             woCyPrev = woCyRow?.values.slice(0, prevDayIndex + 1).reduce((acc, val) => acc + (parseFloat(val) || 0), 0) || 0;
         }
@@ -2018,6 +2029,7 @@ const Amministrazione = ({ venditori, emailAmministrazioni, vendite, datiMensili
             saldatoCyPrev, woCyPrev
         };
     }, [datiMensiliRaw]);
+    // --- FINE MODIFICA ---
 
     const subViewComponents = {
         datiMensili: <DatiMensili />,
@@ -2074,8 +2086,7 @@ const DatiMensili = () => {
     React.useEffect(() => {
         if (!periodo || !auth.currentUser) return;
         setIsLoading(true);
-        const userId = window.mioCodiceUtente || auth.currentUser?.uid;
-        const docRef = doc(db, `artifacts/${appId}/users/${userId}/datiMensili`, periodo);
+        const docRef = doc(db, `artifacts/${appId}/users/${auth.currentUser.uid}/datiMensili`, periodo);
         const unsub = onSnapshot(docRef, (doc) => {
             setDatiMensili(doc.exists() ? doc.data() : {});
             setIsLoading(false);
@@ -2099,10 +2110,13 @@ const DatiMensili = () => {
                         throw new Error("La libreria per la lettura dei file Excel (XLSX) non è disponibile.");
                     }
                     const workbook = window.XLSX.read(event.target.result, { type: 'binary' });
+                    // LEGGE TUTTE LE RIGHE E COLONNE, INCLUSE QUELLE VUOTE
                     const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                    // Usiamo 'range' per assicurarci di catturare tutte le celle, anche quelle vuote
                     const sheetData = window.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
 
                     let dataStartRowIndex = -1;
+                    // Cerchiamo l'esatta corrispondenza per 'Saldato TGT' nella colonna D (indice 3)
                     for (let i = 0; i < sheetData.length; i++) {
                         if (sheetData[i] && String(sheetData[i][3]).trim().toLowerCase() === 'saldato tgt') {
                             dataStartRowIndex = i;
@@ -2115,19 +2129,21 @@ const DatiMensili = () => {
                     const dateHeaders = Array.from({ length: numDaysInMonth }, (_, i) => `${String(i + 1).padStart(2, '0')}/${periodo.slice(5, 7)}/${periodo.slice(0, 4)}`);
 
                     const metrics = [];
+                    // Leggiamo un numero sufficiente di righe per includere tutti i dati
                     const rowsToRead = 25; 
                     for (let i = dataStartRowIndex; i < dataStartRowIndex + rowsToRead && i < sheetData.length; i++) {
                         const row = sheetData[i] || [];
                         const metricName = String(row[3] || "").trim();
+                        // Se la metrica ha un nome o se la riga non è completamente vuota, la includiamo
                         if (metricName || row.slice(4).some(cell => cell !== null)) {
                             const values = row.slice(4, 4 + numDaysInMonth);
+                            // Sostituiamo 'null' con stringhe vuote per coerenza
                             metrics.push({ name: metricName, values: values.map(v => v === null ? '' : v) });
                         }
                     }
 
                     const parsedData = { period: periodo, dateHeaders, metrics };
-                    const userId = window.mioCodiceUtente || auth.currentUser?.uid;
-                    await setDoc(doc(db, `artifacts/${appId}/users/${userId}/datiMensili`, periodo), parsedData);
+                    await setDoc(getDocumentRef('datiMensili', periodo), parsedData);
                     resolve('File elaborato e salvato con successo.');
                 } catch (err) {
                     console.error("Errore processamento file:", err);
@@ -2158,6 +2174,7 @@ const DatiMensili = () => {
             ];
             const data = exampleMetrics.map(metric => {
                 const row = ['','','', metric];
+                // Lasciamo vuoti i valori per i separatori
                 if (metric !== '') {
                     for (let i = 0; i < numDaysInMonth; i++) row.push(0);
                 }
@@ -2173,6 +2190,7 @@ const DatiMensili = () => {
         }
     };
 
+    // NUOVA FUNZIONE PER LA LOGICA DI RENDER DELLE CELLE
     const renderCellContent = (metricName, value) => {
         const isPercentage = metricName.toLowerCase() === 'saldato vs target';
         const isNumeric = typeof value === 'number';
@@ -2183,6 +2201,7 @@ const DatiMensili = () => {
         if (isNumeric) {
             return value.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         }
+        // Se il valore è vuoto o non è un numero, non mostrare nulla
         return value || '';
     };
 
@@ -2200,11 +2219,13 @@ const DatiMensili = () => {
                         <thead className="sticky top-0 bg-gray-100 z-10">
                             <tr>
                                 <th className="py-2 px-4 border-b border-r font-semibold text-left sticky left-0 bg-gray-100 w-64">Metrica</th>
+                                {/* MODIFICA: Mostra DD/MM nell'header */}
                                 {datiMensili.dateHeaders.map(h => <th key={h} className="py-2 px-3 border-b font-normal text-gray-600 w-24">{h.substring(0, 5)}</th>)}
                             </tr>
                         </thead>
                         <tbody>
                             {datiMensili.metrics.map((m, metricIndex) => {
+                                // MODIFICA: Logica per aggiungere i separatori
                                 if (m.name === '') {
                                     return (
                                         <tr key={`spacer-${metricIndex}`} className="h-4 bg-gray-50">
@@ -2218,11 +2239,13 @@ const DatiMensili = () => {
                                     {m.values.map((v, i) => (
                                         <td 
                                             key={i} 
+                                            // MODIFICA: Applica stili dinamicamente
                                             className={`
                                                 py-2 px-3 border-b text-right
                                                 ${(v === '' || v === null) ? 'bg-gray-200' : ''}
                                             `}
                                         >
+                                            {/* MODIFICA: Usa la funzione di render per formattare il contenuto */}
                                             {renderCellContent(m.name, v)}
                                         </td>
                                     ))}
@@ -2310,6 +2333,7 @@ const InvioChiusura = ({ vendite, emailAmministrazioni, onClose, datiChiusuraGio
         }
         setIsSending(true);
         
+        // Se ci sono vendite, chiedi all'utente se vuole scaricare l'allegato
         if (datiOggi.venditeDelGiorno.length > 0) {
             if (window.confirm("Vuoi anche scaricare il PDF con il dettaglio delle vendite da allegare all'email?")) {
                 generateSalesPdf(datiOggi.venditeDelGiorno, `Dettaglio Vendite del ${new Date().toLocaleDateString('it-IT')}`);
@@ -2321,8 +2345,7 @@ const InvioChiusura = ({ vendite, emailAmministrazioni, onClose, datiChiusuraGio
         const oggi = new Date();
         const periodYYYYMM = `${oggi.getFullYear()}-${String(oggi.getMonth() + 1).padStart(2, '0')}`;
         try {
-            const userId = window.mioCodiceUtente || auth.currentUser?.uid;
-            const docRef = doc(db, `artifacts/${appId}/users/${userId}/datiMensili`, periodYYYYMM);
+            const docRef = getDocumentRef('datiMensili', periodYYYYMM);
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) {
                 const adminData = docSnap.data();
@@ -2361,7 +2384,7 @@ const InvioChiusura = ({ vendite, emailAmministrazioni, onClose, datiChiusuraGio
                         }
                     });
 
-                    await setDoc(doc(db, `artifacts/${appId}/users/${userId}/datiMensili`, periodYYYYMM), adminData);
+                    await setDoc(getDocumentRef('datiMensili', periodYYYYMM), adminData);
                     toast.success("Dati di chiusura salvati nel gestionale.");
                 }
             }
@@ -2659,7 +2682,7 @@ const AddEditContattoModal = ({ isOpen, onClose, contatto, onSave, initialType =
         } else {
             setFormData({ tipo: initialType, cliente: '', recapito: '', rif_vaschetta: '', note: '', lenti: [] });
         }
-    }, [contatto, initialType, isOpen]);
+    }, [contatto, initialType, isOpen]); // Aggiunto isOpen per resettare il form se non c'è un contatto
 
     const handleFormChange = (e) => {
         const { name, value } = e.target;
@@ -2675,7 +2698,7 @@ const AddEditContattoModal = ({ isOpen, onClose, contatto, onSave, initialType =
     
     const addLens = () => {
         const newLens = { 
-            id: Date.now(),
+            id: Date.now(), // Unique key for react list
             prodotto: '', 
             potere: '', 
             data_acquisto: new Date().toISOString().slice(0, 10),
@@ -2700,13 +2723,13 @@ const AddEditContattoModal = ({ isOpen, onClose, contatto, onSave, initialType =
         const dataToSave = {...formData, lenti: lentiToSave };
 
         try {
-            if (contatto) {
+            if (contatto) { // Modifica
                 await updateDoc(getDocumentRef('contatti_lenti', contatto.id), dataToSave);
-            } else {
+            } else { // Creazione
                 await addDoc(getCollectionRef('contatti_lenti'), dataToSave);
             }
             toast.success('Cliente salvato con successo!');
-            onSave();
+            onSave(); // Chiude la modale
         } catch (error) {
             toast.error(`Impossibile salvare: ${error.message}`);
         } finally {
@@ -2862,6 +2885,7 @@ const Contattologia = ({ contatti, initialAction, onActionComplete }) => {
     );
 };
 
+
 // --- COMPONENTE PRINCIPALE APP ---
 export default function App() {
     const [activeSection, setActiveSection] = React.useState('dashboard');
@@ -2869,18 +2893,31 @@ export default function App() {
     const [user, setUser] = React.useState(null);
     const [isAuthReady, setIsAuthReady] = React.useState(false);
     const [obiettivi, setObiettivi] = React.useState({ budget: 'N/D', wo: 'N/D' });
-    
-    // STATO PER RECUPERO DATI
-    const [inputCodice, setInputCodice] = React.useState('');
-    const [refreshTrigger, setRefreshTrigger] = React.useState(0);
+
+    // --- INIZIO MODIFICA ---
+    // Stati per gestire il nome utente personalizzato
+    const [userDisplayName, setUserDisplayName] = React.useState('Nome Utente');
+    const [isEditingName, setIsEditingName] = React.useState(false);
+    const [tempDisplayName, setTempDisplayName] = React.useState('');
+    // --- FINE MODIFICA ---
 
     // Caricamento dati da Firestore
-    const vendite = useFirestoreCollection('vendite', isAuthReady, refreshTrigger);
-    const venditori = useFirestoreCollection('venditori', isAuthReady, refreshTrigger);
-    const emailAmministrazioni = useFirestoreCollection('emailAmministrazioni', isAuthReady, refreshTrigger);
-    const datiMensiliRaw = useFirestoreCollection('datiMensili', isAuthReady, refreshTrigger);
-    const riparazioni = useFirestoreCollection('riparazioni', isAuthReady, refreshTrigger);
-    const contatti = useFirestoreCollection('contatti_lenti', isAuthReady, refreshTrigger, { orderBy: 'cliente' });
+    const vendite = useFirestoreCollection('vendite', isAuthReady);
+    const venditori = useFirestoreCollection('venditori', isAuthReady);
+    const emailAmministrazioni = useFirestoreCollection('emailAmministrazioni', isAuthReady);
+    const datiMensiliRaw = useFirestoreCollection('datiMensili', isAuthReady);
+    const riparazioni = useFirestoreCollection('riparazioni', isAuthReady);
+    const contatti = useFirestoreCollection('contatti_lenti', isAuthReady, { orderBy: 'cliente' });
+
+    // --- INIZIO MODIFICA ---
+    // Carica il nome utente dal localStorage all'avvio
+    React.useEffect(() => {
+        const savedName = localStorage.getItem('userDisplayName');
+        if (savedName) {
+            setUserDisplayName(savedName);
+        }
+    }, []);
+    // --- FINE MODIFICA ---
 
     React.useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -2929,6 +2966,19 @@ export default function App() {
         setActiveSubView(subView);
     };
 
+    // --- INIZIO MODIFICA ---
+    // Funzione per salvare il nome personalizzato
+    const handleSaveDisplayName = () => {
+        if (tempDisplayName.trim()) {
+            setUserDisplayName(tempDisplayName);
+            localStorage.setItem('userDisplayName', tempDisplayName);
+            setIsEditingName(false);
+        } else {
+            toast.error("Il nome non può essere vuoto.");
+        }
+    };
+    // --- FINE MODIFICA ---
+
     const renderSection = () => {
         switch (activeSection) {
             case 'dashboard': return <Dashboard vendite={vendite} riparazioni={riparazioni} obiettivi={obiettivi} onNavigate={handleNavigation} />;
@@ -2959,6 +3009,7 @@ export default function App() {
 
     return (
         <div className="flex h-screen bg-gray-100 font-sans">
+            {/* --- NUOVO: Contenitore per le notifiche toast, si posizionerà sopra tutto il resto --- */}
             <Toaster
                 position="top-center"
                 toastOptions={{
@@ -3001,35 +3052,43 @@ export default function App() {
                     <p className="text-sm text-gray-700"><strong>TGT Fatturato:</strong> <span className="font-bold">{obiettivi.budget}</span></p>
                     <p className="text-sm text-gray-700"><strong>TGT WO:</strong> <span className="font-bold">{obiettivi.wo}{obiettivi.wo !== 'N/D' && ' €'}</span></p>
                 </div>
-                
+
+                {/* --- INIZIO MODIFICA: Sostituita la visualizzazione statica del UserID con un componente modificabile --- */}
                 <div className="mt-4 bg-gray-50 p-4 rounded-lg">
-                    <h3 className="font-bold text-gray-700 mb-2">Recupero Dati</h3>
-                    <div className="space-y-2">
-                        <input 
-                            type="text" 
-                            value={inputCodice} 
-                            onChange={(e) => setInputCodice(e.target.value)}
-                            className="w-full p-2 text-xs border rounded bg-white focus:ring-2 focus:ring-blue-500 outline-none font-mono"
-                            placeholder="Incolla UserID qui..."
-                        />
-                        <Button 
-                            onClick={() => {
-                                window.mioCodiceUtente = inputCodice;
-                                toast.loading('Sincronizzazione dati in corso...', { id: 'refresh', duration: 1200 });
-                                setRefreshTrigger(prev => prev + 1);
-                            }} 
-                            variant="primary" 
-                            className="w-full text-xs mt-2 py-2" 
-                            icon={RefreshCw}
-                        >
-                            Aggiorna Dati
-                        </Button>
-                        <p className="text-[10px] text-gray-400 mt-2 break-all">ID Attuale:<br/>{user ? user.uid : 'N/A'}</p>
-                    </div>
+                    <h3 className="font-bold text-gray-700 mb-2">Info Utente</h3>
+                    {isEditingName ? (
+                        <div className="space-y-2">
+                            <Input
+                                type="text"
+                                value={tempDisplayName}
+                                onChange={(e) => setTempDisplayName(e.target.value)}
+                                placeholder="Inserisci il nome"
+                                className="p-1 text-sm"
+                            />
+                            <div className="flex gap-2">
+                                <Button onClick={handleSaveDisplayName} className="px-2 py-1 text-xs">Salva</Button>
+                                <Button onClick={() => setIsEditingName(false)} variant="neutral" className="px-2 py-1 text-xs">Annulla</Button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="flex justify-between items-center">
+                            <p className="text-sm font-semibold break-words">{userDisplayName}</p>
+                            <button
+                                onClick={() => {
+                                    setTempDisplayName(userDisplayName);
+                                    setIsEditingName(true);
+                                }}
+                                className="text-blue-600 hover:text-blue-800 text-xs font-bold"
+                            >
+                                Modifica
+                            </button>
+                        </div>
+                    )}
                 </div>
+                 {/* --- FINE MODIFICA --- */}
 
             </div>
-            <main key={refreshTrigger} className="flex-1 p-8 overflow-y-auto">{renderSection()}</main>
+            <main className="flex-1 p-8 overflow-y-auto">{renderSection()}</main>
         </div>
     );
 }
