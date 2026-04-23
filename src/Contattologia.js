@@ -52,6 +52,21 @@ const getDocumentRef = (collectionName, docId) => {
     return doc(db, `artifacts/${appId}/users/${userId}/${collectionName}`, docId);
 };
 
+// Collezione polos condivisa (non per-utente)
+const getPolosRef = () => collection(db, `artifacts/${appId}/polos`);
+
+const usePolos = () => {
+    const [polos, setPolos] = React.useState([]);
+    React.useEffect(() => {
+        const q = query(collection(db, `artifacts/${appId}/polos`), orderBy('codice'));
+        const unsub = onSnapshot(q, snap => {
+            setPolos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        }, () => {});
+        return unsub;
+    }, []);
+    return polos;
+};
+
 const useDebounce = (value, delay) => {
     const [debouncedValue, setDebouncedValue] = React.useState(value);
     React.useEffect(() => {
@@ -140,13 +155,13 @@ const generateSalesPdf = (salesData, title = 'Report Vendite Dettagliato') => {
 const Modal = ({ isOpen, onClose, title, children, size = 'max-w-lg', zIndex = 'z-50' }) => {
     if (!isOpen) return null;
     return (
-        <div className={`fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center ${zIndex} p-4 animate-fade-in`}>
-            <div className={`bg-white rounded-lg shadow-xl p-6 w-full ${size} m-4 transform transition-transform duration-300 animate-fade-in-up`}>
-                <div className="flex justify-between items-center border-b pb-3 mb-4">
+        <div className={`fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center ${zIndex} p-2 md:p-4 animate-fade-in`}>
+            <div className={`bg-white rounded-lg shadow-xl w-full ${size} mx-2 md:mx-4 max-h-[92vh] flex flex-col transform transition-transform duration-300 animate-fade-in-up`}>
+                <div className="flex justify-between items-center border-b pb-3 px-4 pt-4 md:px-6 md:pt-6 flex-shrink-0">
                     <h4 className="text-xl font-semibold text-gray-800">{title}</h4>
-                    <button onClick={onClose} className="text-gray-500 hover:text-gray-800 transition-colors"><X size={24} /></button>
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-800 transition-colors flex-shrink-0 ml-2"><X size={24} /></button>
                 </div>
-                <div>{children}</div>
+                <div className="overflow-y-auto flex-1 px-4 pb-4 md:px-6 md:pb-6 pt-4">{children}</div>
             </div>
         </div>
     );
@@ -524,9 +539,9 @@ export {
     // Firebase
     app, auth, db, appId,
     // Helpers Firebase
-    getCollectionRef, getDocumentRef,
+    getCollectionRef, getDocumentRef, getPolosRef,
     // Hooks
-    useDebounce, useFirestoreCollection, useConfirmation,
+    useDebounce, useFirestoreCollection, useConfirmation, usePolos,
     // PDF helper
     generateSalesPdf,
     // UI generici

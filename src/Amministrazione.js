@@ -10,7 +10,7 @@
 import React from 'react';
 import {
     doc, getDoc, setDoc, addDoc, deleteDoc, onSnapshot,
-    writeBatch, getDocs
+    collection, query, orderBy, writeBatch, getDocs
 } from 'firebase/firestore';
 import {
     Trash2, PlusCircle, ChevronLeft, Send, Calendar, Filter, Download, Archive,
@@ -123,16 +123,19 @@ const VistaGraficiCompetizione = ({ vendite }) => {
     };
     
     return (
-        <div className="space-y-6">
-            <div className="bg-gray-50 p-3 rounded-lg flex items-center justify-center gap-4 flex-wrap">
-                <h3 className="font-semibold text-gray-700">Periodo:</h3>
-                <Button onClick={() => setPeriodo('giornaliero')} variant={periodo === 'giornaliero' ? 'primary' : 'neutral'}>Giornaliero</Button>
-                <Button onClick={() => setPeriodo('mensile')} variant={periodo === 'mensile' ? 'primary' : 'neutral'}>Mese Corrente</Button>
-                <div className="w-px bg-gray-300 h-8 mx-2"></div>
-                <h3 className="font-semibold text-gray-700">Competizione:</h3>
-                <Button onClick={() => setMetrica('fatturato')} icon={DollarSign} variant={metrica === 'fatturato' ? 'success' : 'neutral'}>Fatturato</Button>
-                <Button onClick={() => setMetrica('secondi')} icon={Glasses} variant={metrica === 'secondi' ? 'success' : 'neutral'}>Secondi Occhiali</Button>
-                <Button onClick={() => setMetrica('sos')} icon={ShieldCheck} variant={metrica === 'sos' ? 'success' : 'neutral'}>Garanzie SOS</Button>
+        <div className="space-y-4">
+            <div className="bg-gray-50 p-3 rounded-lg space-y-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-semibold text-gray-700 text-sm w-full sm:w-auto">Periodo:</h3>
+                    <Button onClick={() => setPeriodo('giornaliero')} variant={periodo === 'giornaliero' ? 'primary' : 'neutral'} className="flex-1 sm:flex-none">Giornaliero</Button>
+                    <Button onClick={() => setPeriodo('mensile')} variant={periodo === 'mensile' ? 'primary' : 'neutral'} className="flex-1 sm:flex-none">Mese Corrente</Button>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-semibold text-gray-700 text-sm w-full sm:w-auto">Classifica:</h3>
+                    <Button onClick={() => setMetrica('fatturato')} icon={DollarSign} variant={metrica === 'fatturato' ? 'success' : 'neutral'} className="flex-1 sm:flex-none">Fatturato</Button>
+                    <Button onClick={() => setMetrica('secondi')} icon={Glasses} variant={metrica === 'secondi' ? 'success' : 'neutral'} className="flex-1 sm:flex-none">Secondi</Button>
+                    <Button onClick={() => setMetrica('sos')} icon={ShieldCheck} variant={metrica === 'sos' ? 'success' : 'neutral'} className="flex-1 sm:flex-none">SOS</Button>
+                </div>
             </div>
             {renderPodio()}
         </div>
@@ -144,8 +147,8 @@ const StatisticheAvanzate = ({ vendite, venditori }) => {
 
     return (
         <div>
-            <div className="flex justify-between items-center mb-4 border-b">
-                <TabButton tabName="competizione" label="Competizione Venditori" activeTab={view} setActiveTab={setView} />
+            <div className="flex overflow-x-auto border-b mb-4 gap-1 pb-0">
+                <TabButton tabName="competizione" label="Competizione" activeTab={view} setActiveTab={setView} />
                 <TabButton tabName="analisi" label="Analisi Dettagliata" activeTab={view} setActiveTab={setView} />
                 <TabButton tabName="testo" label="Dati Testuali" activeTab={view} setActiveTab={setView} />
             </div>
@@ -788,7 +791,114 @@ const GestioneDatiModal = ({ isOpen, onClose, vendite, venditori, emailAmministr
 //// ===================================================================================
 // --- SEZIONE AMMINISTRAZIONE (MODIFICATA) ---
 // ===================================================================================
-const Amministrazione = ({ venditori, emailAmministrazioni, vendite, datiMensiliRaw }) => {
+// ===================================================================================
+// --- GESTIONE POLOS ---
+// ===================================================================================
+
+const GestionePolos = ({ onClose }) => {
+    const [polos, setPolos] = React.useState([]);
+    const [nuovoCodice, setNuovoCodice] = React.useState('');
+    const [nuovoNome, setNuovoNome] = React.useState('');
+    const [nuovoUserId, setNuovoUserId] = React.useState('');
+    const [nuovoRuolo, setNuovoRuolo] = React.useState('negozio');
+    const [loading, setLoading] = React.useState(false);
+
+    React.useEffect(() => {
+        const q = query(collection(db, `artifacts/${appId}/polos`), orderBy('codice'));
+        const unsub = onSnapshot(q, snap => {
+            setPolos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        }, () => {});
+        return unsub;
+    }, []);
+
+    const handleAdd = async () => {
+        const codice = nuovoCodice.trim();
+        const nome = nuovoNome.trim();
+        const userId = nuovoUserId.trim();
+        if (!codice || !nome || !userId) { toast.error('Inserisci codice, nome e UserID.'); return; }
+        setLoading(true);
+        try {
+            await addDoc(collection(db, `artifacts/${appId}/polos`), {
+                codice, nome, userId, ruolo: nuovoRuolo, createdAt: new Date().toISOString()
+            });
+            setNuovoCodice(''); setNuovoNome(''); setNuovoUserId(''); setNuovoRuolo('negozio');
+            toast.success(`Console "${codice}" aggiunta.`);
+        } catch { toast.error('Errore durante il salvataggio.'); }
+        setLoading(false);
+    };
+
+    const handleDelete = async (id, codice) => {
+        if (!window.confirm(`Eliminare la console "${codice}"?`)) return;
+        try {
+            await deleteDoc(doc(db, `artifacts/${appId}/polos`, id));
+            toast.success('Console eliminata.');
+        } catch { toast.error('Errore durante l\'eliminazione.'); }
+    };
+
+    return (
+        <div>
+            <Button onClick={onClose} variant="neutral" className="mb-6" icon={ChevronLeft}>Torna al menu</Button>
+            <h3 className="text-2xl font-bold text-gray-800 mb-6">Gestione Console (Polos)</h3>
+
+            <div className="bg-gray-50 p-4 rounded-lg mb-6">
+                <h4 className="font-semibold text-gray-700 mb-3">Aggiungi nuova console</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                    <div>
+                        <label className="text-xs text-gray-500 block mb-1">Codice polo</label>
+                        <input value={nuovoCodice} onChange={e => setNuovoCodice(e.target.value)}
+                            placeholder="es. 6061"
+                            className="p-2 border rounded w-full font-mono text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                    </div>
+                    <div>
+                        <label className="text-xs text-gray-500 block mb-1">Nome negozio</label>
+                        <input value={nuovoNome} onChange={e => setNuovoNome(e.target.value)}
+                            placeholder="es. VisionOttica Catania"
+                            className="p-2 border rounded w-full text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                    </div>
+                    <div className="md:col-span-2">
+                        <label className="text-xs text-gray-500 block mb-1">UserID Firebase</label>
+                        <input value={nuovoUserId} onChange={e => setNuovoUserId(e.target.value)}
+                            placeholder="es. 3e4qJDou5Rf38tOgFnmkBRcC3f63"
+                            className="p-2 border rounded w-full text-xs font-mono focus:ring-2 focus:ring-blue-500 outline-none" />
+                    </div>
+                    <div>
+                        <label className="text-xs text-gray-500 block mb-1">Ruolo</label>
+                        <select value={nuovoRuolo} onChange={e => setNuovoRuolo(e.target.value)}
+                            className="p-2 border rounded w-full text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white">
+                            <option value="negozio">Negozio</option>
+                            <option value="area_manager">Area Manager</option>
+                        </select>
+                    </div>
+                </div>
+                <Button onClick={handleAdd} variant="primary" icon={PlusCircle} disabled={loading}>
+                    Aggiungi Console
+                </Button>
+            </div>
+
+            <div className="space-y-2">
+                {polos.length === 0 ? (
+                    <p className="text-gray-500 text-center py-8">Nessuna console configurata.</p>
+                ) : polos.map(polo => (
+                    <div key={polo.id} className="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-4 py-3">
+                        <div>
+                            <span className="font-black text-blue-700 text-xl mr-2">{polo.codice}</span>
+                            <span className="text-gray-700 mr-2">{polo.nome}</span>
+                            {polo.ruolo === 'area_manager' && (
+                                <span className="text-xs bg-purple-100 text-purple-700 font-semibold px-2 py-0.5 rounded-full">Area Manager</span>
+                            )}
+                            <p className="text-xs text-gray-400 font-mono mt-1">{polo.userId}</p>
+                        </div>
+                        <Button onClick={() => handleDelete(polo.id, polo.codice)} variant="danger" icon={Trash2} className="text-xs py-1 px-3 ml-4 flex-shrink-0">
+                            Elimina
+                        </Button>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+const Amministrazione = ({ venditori, emailAmministrazioni, vendite, datiMensiliRaw, selectedPolo, amSettings = {}, isAreaManager = false }) => {
     const [subView, setSubView] = React.useState('menu');
     const [isGestioneModalOpen, setIsGestioneModalOpen] = React.useState(false);
     const [isCassettoModalOpen, setIsCassettoModalOpen] = React.useState(false);
@@ -853,6 +963,7 @@ const Amministrazione = ({ venditori, emailAmministrazioni, vendite, datiMensili
         statistiche: <StatisticheAvanzate vendite={vendite} venditori={venditori} />,
         chiusura: <InvioChiusura vendite={vendite} emailAmministrazioni={emailAmministrazioni} onClose={() => setSubView('menu')} datiChiusuraGiornaliera={datiChiusuraGiornaliera} />,
         pdf: <FiltraPdf vendite={vendite} venditori={venditori} onClose={() => setSubView('menu')} />,
+        gestionePolos: <GestionePolos onClose={() => setSubView('menu')} />,
     };
 
     const renderSubView = () => subViewComponents[subView] || <p>Sezione non trovata.</p>;
@@ -862,9 +973,16 @@ const Amministrazione = ({ venditori, emailAmministrazioni, vendite, datiMensili
             <Button onClick={() => setSubView('datiMensili')} variant="primary" icon={Calendar}>Dati Mensili</Button>
             <Button onClick={() => setSubView('statistiche')} variant="indigo" icon={BarChartHorizontal}>Statistiche Veloci</Button>
             <Button onClick={() => setIsCassettoModalOpen(true)} variant="sky" icon={Send}>Dati per Cassetto</Button>
-            <Button onClick={() => setSubView('chiusura')} variant="success" icon={Send}>Invio Chiusura Giornaliera</Button>
+            {(!isAreaManager || amSettings.showChiusura) && (
+                <Button onClick={() => setSubView('chiusura')} variant="success" icon={Send}>Invio Chiusura Giornaliera</Button>
+            )}
+            {(!isAreaManager || amSettings.showImpostazioni) && (
+                <Button onClick={() => setIsGestioneModalOpen(true)} variant="neutral" icon={Settings}>Impostazioni</Button>
+            )}
             <Button onClick={() => setSubView('pdf')} variant="warning" icon={Filter}>Reportistica Avanzata</Button>
-            <Button onClick={() => setIsGestioneModalOpen(true)} variant="neutral" icon={Settings}>Impostazioni</Button>
+            {isAreaManager && (
+                <Button onClick={() => setSubView('gestionePolos')} variant="indigo" icon={PlusCircle}>Gestione Console (Polos)</Button>
+            )}
         </div>
     );
 
@@ -1385,8 +1503,8 @@ const FiltraPdf = ({ vendite, venditori, onClose }) => {
 
     const renderVisualizzazione = () => (
         <div>
-            <div className="overflow-y-auto max-h-[60vh] border rounded-lg">
-                <table className="min-w-full bg-white text-sm">
+            <div className="overflow-x-auto overflow-y-auto max-h-[60vh] border rounded-lg">
+                <table className="min-w-full bg-white text-sm whitespace-nowrap">
                     <thead className="bg-gray-100 sticky top-0">
                         <tr>
                             {['Data', 'Cliente', 'Venditore', 'Tipo Lente', 'Ordine', 'Vaschetta', 'N. Ordine', 'Stato', 'Importo', 'Trattamenti'].map(h => <th key={h} className="py-2 px-3 border-b text-left font-semibold">{h}</th>)}
@@ -1445,10 +1563,10 @@ const FiltraPdf = ({ vendite, venditori, onClose }) => {
                    </label>
                 </div>
             </div>
-            <div className="flex justify-end gap-4 mt-6">
-                <Button type="button" onClick={onClose} variant="neutral">Annulla</Button>
-                <Button type="button" onClick={handleVisualizza} icon={Eye} variant="success">Visualizza</Button>
-                <Button type="submit" icon={Download}>Genera PDF</Button>
+            <div className="flex flex-wrap justify-end gap-2 mt-6">
+                <Button type="button" onClick={onClose} variant="neutral" className="flex-1 sm:flex-none">Annulla</Button>
+                <Button type="button" onClick={handleVisualizza} icon={Eye} variant="success" className="flex-1 sm:flex-none">Visualizza</Button>
+                <Button type="submit" icon={Download} className="flex-1 sm:flex-none">Genera PDF</Button>
             </div>
         </form>
     );

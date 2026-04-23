@@ -25,7 +25,7 @@ import {
 // --- SEZIONE DASHBOARD ---
 // ===================================================================================
 
-const Dashboard = ({ vendite, riparazioni, obiettivi, onNavigate }) => {
+const Dashboard = ({ vendite, riparazioni, obiettivi, onNavigate, amSettings = {} }) => {
     const stats = React.useMemo(() => {
         const oggi = new Date();
         const meseCorrente = oggi.getMonth();
@@ -82,35 +82,41 @@ const Dashboard = ({ vendite, riparazioni, obiettivi, onNavigate }) => {
             </div>
 
             {/* Azioni Rapide e Attività Recenti */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="bg-white p-6 rounded-lg shadow-md">
-                    <h3 className="text-xl font-semibold text-gray-800 mb-4">Azioni Rapide</h3>
-                    <div className="grid grid-cols-2 gap-4">
-                        <Button onClick={() => onNavigate('laboratorio', 'carica')} icon={PlusCircle} variant="success">Carica Vendita</Button>
-                        <Button onClick={() => onNavigate('laboratorio', 'caricaRiparazione')} icon={PlusCircle} variant="teal">Carica Riparazione</Button>
-                        <Button onClick={() => onNavigate('contattologia', 'nuova_vendita_lac')} icon={Contact} variant="indigo">Vendita LAC</Button>
-                        <Button onClick={() => onNavigate('contattologia', 'nuova_prova_lac')} icon={Beaker} variant="sky">Prova LAC</Button>
-                        <Button onClick={() => onNavigate('laboratorio', 'ricerca')} icon={Search} className="col-span-2">Ricerca Globale</Button>
-                    </div>
+            {(amSettings.showAzioniRapide !== false || amSettings.showAttivitaRecenti !== false) && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    {amSettings.showAzioniRapide !== false && (
+                        <div className="bg-white p-6 rounded-lg shadow-md">
+                            <h3 className="text-xl font-semibold text-gray-800 mb-4">Azioni Rapide</h3>
+                            <div className="grid grid-cols-2 gap-4">
+                                <Button onClick={() => onNavigate('laboratorio', 'carica')} icon={PlusCircle} variant="success">Carica Vendita</Button>
+                                <Button onClick={() => onNavigate('laboratorio', 'caricaRiparazione')} icon={PlusCircle} variant="teal">Carica Riparazione</Button>
+                                <Button onClick={() => onNavigate('contattologia', 'nuova_vendita_lac')} icon={Contact} variant="indigo">Vendita LAC</Button>
+                                <Button onClick={() => onNavigate('contattologia', 'nuova_prova_lac')} icon={Beaker} variant="sky">Prova LAC</Button>
+                                <Button onClick={() => onNavigate('laboratorio', 'ricerca')} icon={Search} className="col-span-2">Ricerca Globale</Button>
+                            </div>
+                        </div>
+                    )}
+                    {amSettings.showAttivitaRecenti !== false && (
+                        <div className="bg-white p-6 rounded-lg shadow-md">
+                            <h3 className="text-xl font-semibold text-gray-800 mb-4">Attività Recenti</h3>
+                            <ul className="space-y-3">
+                                {recentActivities.map(act => (
+                                    <li key={act.id} className="flex items-center justify-between text-sm p-2 bg-gray-50 rounded-md">
+                                        <div className="flex items-center gap-3">
+                                            <span className={`px-2 py-1 text-xs rounded-full text-white ${act.type === 'Vendita' ? 'bg-blue-500' : 'bg-sky-500'}`}>{act.type}</span>
+                                            <span><strong>{act.cliente}</strong> - {act.data}</span>
+                                        </div>
+                                        <span className="font-semibold text-gray-600">
+                                            {act.type === 'Vendita' ? act.stato_ordine : act.stato}
+                                        </span>
+                                    </li>
+                                ))}
+                                {recentActivities.length === 0 && <p className="text-gray-500 text-center">Nessuna attività recente.</p>}
+                            </ul>
+                        </div>
+                    )}
                 </div>
-                <div className="bg-white p-6 rounded-lg shadow-md">
-                    <h3 className="text-xl font-semibold text-gray-800 mb-4">Attività Recenti</h3>
-                    <ul className="space-y-3">
-                        {recentActivities.map(act => (
-                            <li key={act.id} className="flex items-center justify-between text-sm p-2 bg-gray-50 rounded-md">
-                                <div className="flex items-center gap-3">
-                                   <span className={`px-2 py-1 text-xs rounded-full text-white ${act.type === 'Vendita' ? 'bg-blue-500' : 'bg-sky-500'}`}>{act.type}</span>
-                                   <span><strong>{act.cliente}</strong> - {act.data}</span>
-                                </div>
-                                <span className="font-semibold text-gray-600">
-                                    {act.type === 'Vendita' ? act.stato_ordine : act.stato}
-                                </span>
-                            </li>
-                        ))}
-                         {recentActivities.length === 0 && <p className="text-gray-500 text-center">Nessuna attività recente.</p>}
-                    </ul>
-                </div>
-            </div>
+            )}
         </div>
     );
 };
