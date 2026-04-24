@@ -574,6 +574,10 @@ const Laboratorio = ({ vendite, venditori, riparazioni, contatti, initialSubView
                                     <input type="checkbox" name="trattamento" value="Utilizzo SOS" className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 mr-2" />
                                     Utilizzo SOS
                                 </label>
+                                <label key="PAYBACK" className="flex items-center">
+                                    <input type="checkbox" name="trattamento" value="PAYBACK" className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 mr-2" />
+                                    PAYBACK
+                                </label>
                             </div>
                         </div>
                     </div>

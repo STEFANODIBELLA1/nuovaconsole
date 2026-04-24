@@ -1216,8 +1216,9 @@ const InvioChiusura = ({ vendite, emailAmministrazioni, onClose, datiChiusuraGio
             acc.totaleWO += v.importo || 0;
             if (v.ordine_lente === 'Primo') acc.primiOrdini++;
             else acc.secondiOrdini++;
+            if ((v.trattamenti || []).includes('PAYBACK')) acc.paybackCount++;
             return acc;
-        }, { totaleWO: 0, primiOrdini: 0, secondiOrdini: 0 });
+        }, { totaleWO: 0, primiOrdini: 0, secondiOrdini: 0, paybackCount: 0 });
         
         return { sommario, venditeDelGiorno };
     }, [vendite]);
@@ -1320,6 +1321,9 @@ const InvioChiusura = ({ vendite, emailAmministrazioni, onClose, datiChiusuraGio
         let body = `Buonasera,\n\n`;
         body += `la giornata odierna si chiude con un fatturato di ${(parseFloat(fatturato) || 0).toFixed(2)} Euro e un commissionato di ${datiOggi.sommario.totaleWO.toFixed(2)} Euro.\n`;
         body += `composto da ${datiOggi.sommario.primiOrdini} primi e ${datiOggi.sommario.secondiOrdini} secondi.\n`;
+        if (datiOggi.sommario.paybackCount > 0) {
+            body += `Contratti PAYBACK stipulati: ${datiOggi.sommario.paybackCount}.\n`;
+        }
         if (parseInt(sole || '0', 10) > 0) {
             body += `Occhiali da sole venduti: ${parseInt(sole, 10)} per un valore di ${(parseFloat(valoreSole) || 0).toFixed(2)} Euro.\n`;
         }
@@ -1392,10 +1396,11 @@ const InvioChiusura = ({ vendite, emailAmministrazioni, onClose, datiChiusuraGio
 
                 <div className="mb-4">
                     <strong className="font-bold">2. Dati Calcolati da WO (Work Order) di Oggi</strong>
-                    <div className="grid grid-cols-3 gap-4 p-2 bg-gray-50 rounded-md mt-2">
+                    <div className="grid grid-cols-4 gap-4 p-2 bg-gray-50 rounded-md mt-2">
                         <p><strong>Totale WO:</strong> {datiOggi.sommario.totaleWO.toFixed(2)} €</p>
                         <p><strong>Primi:</strong> {datiOggi.sommario.primiOrdini}</p>
                         <p><strong>Secondi:</strong> {datiOggi.sommario.secondiOrdini}</p>
+                        <p><strong>PAYBACK:</strong> {datiOggi.sommario.paybackCount}</p>
                     </div>
                 </div>
                 
