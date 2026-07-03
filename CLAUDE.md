@@ -2,7 +2,7 @@
 
 > Fonte di verità del progetto per Claude Code.
 > Aggiornare e committare ad ogni sessione significativa.
-> **Ultimo aggiornamento: 23/04/2026 — commit `881a625`**
+> **Ultimo aggiornamento: 03/07/2026 — sessione presentazione video**
 
 ---
 
@@ -79,6 +79,23 @@ Console gestionale per ottici VisionOttica. Obiettivo: gestire vendite, riparazi
 - **Contattologia** — gestione contatti lenti a contatto
 
 ---
+
+## Presentazione video (03/07/2026)
+
+Cartella `presentazione/` (non committata, solo locale):
+- `presentazione-bozza.mp4` — bozza montata 2:26: 21 screenshot con Ken Burns,
+  didascalie, voce neurale Edge (it-IT-GiuseppeMultilingualNeural), musica
+  sintetizzata stile Viva la Vida, outro "contattami per una demo" (senza URL)
+- `demo-completo.mp4` / `demo-navigazione.mp4` — girato grezzo navigazione live
+- `bozza-video.md` — scaletta 7 scene + copione voiceover (fonte di verità testi)
+- `screenshots/` — 21 PNG @2x/@3x catturati dal sito live (polo 6061 Belpasso)
+- `tools/` — pipeline rigenerabile: `shots*.js` (screenshot Playwright),
+  `video2.js` (girato), `musica.js` (sottofondo), `build2.js` (montaggio
+  completo TTS+ffmpeg; richiede `npm i playwright msedge-tts` + ffmpeg winget)
+
+**Aperto:** schermate/video contengono nomi reali clienti/venditori e UserID →
+prima di uso esterno creare polo demo con dati finti e rigenerare, o sfocare.
+Musica sintetica sostituibile con traccia royalty-free in CapCut.
 
 ## TODO aperti
 
