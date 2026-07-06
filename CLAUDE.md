@@ -83,14 +83,17 @@ Console gestionale per ottici VisionOttica. Obiettivo: gestire vendite, riparazi
 ## Presentazione video (03–06/07/2026)
 
 Cartella `presentazione/` (non committata, solo locale):
-- `presentazione-v3.mp4` — **versione attuale** 2:40 (06/07, `tools/build4.js`):
+- `presentazione-v4.mp4` — **versione attuale** 2:50 (06/07, `tools/build4.js`):
+  come v3 + teaser finale parlato dopo l'outro: card ciano "COMING SOON —
+  Push&Go — L'ordine delle lenti a contatto, con un click"
+- `presentazione-v4-invio.mp4` — compressa 720p (7,8 MB) per email/WhatsApp
+- `presentazione-v3.mp4` / `presentazione-v3-invio.mp4` — 2:40 senza teaser:
   PRIVACY OK (screenshot anonimizzati, vedi sotto) + look reel: ogni schermata
   è mostrata INTERA come card arrotondata con ombra su sfondo sfocato (niente
   più tagli ai lati né distorsione), Ken Burns leggero (max 1.055), transizioni
   xfade dinamiche (zoomin/slide/circleopen/hblur, 0.4s), barra di avanzamento
   azzurra in basso, didascalie animate, voce Elsa, outro "VisionOttica 2.0 —
   Un progetto di Stefano Di Bella"
-- `presentazione-v3-invio.mp4` — compressa 720p (7 MB) per email/WhatsApp
 - `presentazione-v2.mp4` / `presentazione-v2-invio.mp4` — v2 (04/07, `build3.js`,
   CONTIENE DATI REALI: non usare esternamente)
 - `presentazione-bozza.mp4` — v1 2:26 (03/07, `tools/build2.js`, voce Giuseppe)
