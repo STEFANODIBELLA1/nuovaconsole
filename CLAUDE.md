@@ -2,7 +2,7 @@
 
 > Fonte di verità del progetto per Claude Code.
 > Aggiornare e committare ad ogni sessione significativa.
-> **Ultimo aggiornamento: 03/07/2026 — sessione presentazione video**
+> **Ultimo aggiornamento: 06/07/2026 — video v3: privacy + card arrotondate + effetti reel**
 
 ---
 
@@ -80,22 +80,38 @@ Console gestionale per ottici VisionOttica. Obiettivo: gestire vendite, riparazi
 
 ---
 
-## Presentazione video (03/07/2026)
+## Presentazione video (03–06/07/2026)
 
 Cartella `presentazione/` (non committata, solo locale):
-- `presentazione-bozza.mp4` — bozza montata 2:26: 21 screenshot con Ken Burns,
-  didascalie, voce neurale Edge (it-IT-GiuseppeMultilingualNeural), musica
-  sintetizzata stile Viva la Vida, outro "contattami per una demo" (senza URL)
-- `demo-completo.mp4` / `demo-navigazione.mp4` — girato grezzo navigazione live
-- `bozza-video.md` — scaletta 7 scene + copione voiceover (fonte di verità testi)
-- `screenshots/` — 21 PNG @2x/@3x catturati dal sito live (polo 6061 Belpasso)
-- `tools/` — pipeline rigenerabile: `shots*.js` (screenshot Playwright),
-  `video2.js` (girato), `musica.js` (sottofondo), `build2.js` (montaggio
-  completo TTS+ffmpeg; richiede `npm i playwright msedge-tts` + ffmpeg winget)
+- `presentazione-v3.mp4` — **versione attuale** 2:40 (06/07, `tools/build4.js`):
+  PRIVACY OK (screenshot anonimizzati, vedi sotto) + look reel: ogni schermata
+  è mostrata INTERA come card arrotondata con ombra su sfondo sfocato (niente
+  più tagli ai lati né distorsione), Ken Burns leggero (max 1.055), transizioni
+  xfade dinamiche (zoomin/slide/circleopen/hblur, 0.4s), barra di avanzamento
+  azzurra in basso, didascalie animate, voce Elsa, outro "VisionOttica 2.0 —
+  Un progetto di Stefano Di Bella"
+- `presentazione-v3-invio.mp4` — compressa 720p (7 MB) per email/WhatsApp
+- `presentazione-v2.mp4` / `presentazione-v2-invio.mp4` — v2 (04/07, `build3.js`,
+  CONTIENE DATI REALI: non usare esternamente)
+- `presentazione-bozza.mp4` — v1 2:26 (03/07, `tools/build2.js`, voce Giuseppe)
+- `campioni-voce/` — 4 mp3 di confronto voce femminile: Elsa, Isabella,
+  Ava multilingual, Seraphina multilingual (nota: it-IT-IsabellaMultilingualNeural
+  NON esiste su Edge TTS; multilingual ita = solo Giuseppe maschile)
+- `demo-completo.mp4` / `demo-navigazione.mp4` — girato grezzo (DATI REALI)
+- `bozza-video.md` — scaletta 7 scene + outro, copione voiceover (fonte di verità)
+- `screenshots/` — 21 PNG originali con DATI REALI (non usare esternamente)
+- `screenshots-demo/` — screenshot ANONIMIZZATI (06/07, `tools/shots7.js`):
+  nomi clienti/venditori sostituiti con nomi finti nel DOM prima dello scatto
+  (harvest automatico: laboratorio a–z, contattologia, select venditori,
+  classifica), UserID Firebase rimescolati, telefoni → "333 1234567".
+  Mappa reale→finto in `_mappa-nomi.json` (NON diffondere: contiene i nomi reali)
+- `tools/` — pipeline rigenerabile: `shots7.js` (screenshot anonimizzati),
+  `build4.js` (montaggio attuale), `musica.js` (sottofondo), `campioni-voce.js`,
+  vecchi: `shots2/5/6.js`, `build2/3.js`, `video2.js`. msedge-tts in
+  `node_modules` del repo; playwright installato con `--no-save`; ffmpeg (winget)
 
-**Aperto:** schermate/video contengono nomi reali clienti/venditori e UserID →
-prima di uso esterno creare polo demo con dati finti e rigenerare, o sfocare.
-Musica sintetica sostituibile con traccia royalty-free in CapCut.
+**Aperto:** musica sintetica sostituibile con traccia royalty-free in CapCut.
+Voce femminile da confermare dopo ascolto campioni (ora Elsa).
 
 ## TODO aperti
 
