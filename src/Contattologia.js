@@ -17,6 +17,7 @@ import {
     AlertTriangle, CheckCircle, Contact, FileDown, Users
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import PushGo from './PushGo';
 
 // --- CONFIGURAZIONE FIREBASE ---
 const firebaseConfig = typeof __firebase_config !== 'undefined'
@@ -492,17 +493,19 @@ const Contattologia = ({ contatti, initialAction, onActionComplete }) => {
 
             <div className="flex justify-between items-center border-b pb-4 mb-6">
                 <h2 className="text-3xl font-bold text-gray-800">Contattologia</h2>
-                <Button onClick={() => openModal()} icon={PlusCircle} variant="success">Nuovo Cliente</Button>
+                {activeTab !== 'pushgo' && <Button onClick={() => openModal()} icon={PlusCircle} variant="success">Nuovo Cliente</Button>}
             </div>
-            
+
             <div className="flex border-b mb-6">
                 <TabButton tabName="vendita" label="Vendite LAC" activeTab={activeTab} setActiveTab={setActiveTab} />
                 <TabButton tabName="prova" label="Prove LAC" activeTab={activeTab} setActiveTab={setActiveTab} />
+                <TabButton tabName="pushgo" label="Push&Go ⚡" activeTab={activeTab} setActiveTab={setActiveTab} />
             </div>
 
+            {activeTab === 'pushgo' ? <PushGo /> : (<>
              <div className="mb-6">
-                <Input 
-                    type="text" 
+                <Input
+                    type="text"
                     placeholder={`Cerca cliente in ${activeTab === 'vendita' ? 'Vendite' : 'Prove'}...`}
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
@@ -527,6 +530,7 @@ const Contattologia = ({ contatti, initialAction, onActionComplete }) => {
                 ))}
                 {filteredContatti.length === 0 && <p className="text-center text-gray-500 py-8">Nessun cliente trovato.</p>}
             </div>
+            </>)}
         </div>
     );
 };

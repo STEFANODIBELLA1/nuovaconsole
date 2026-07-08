@@ -2,7 +2,7 @@
 
 > Fonte di verità del progetto per Claude Code.
 > Aggiornare e committare ad ogni sessione significativa.
-> **Ultimo aggiornamento: 06/07/2026 — video v3: privacy + card arrotondate + effetti reel**
+> **Ultimo aggiornamento: 08/07/2026 — modulo Push&Go (integrazione OrdinaLac) in Contattologia**
 
 ---
 
@@ -27,6 +27,7 @@ Console gestionale per ottici VisionOttica. Obiettivo: gestire vendite, riparazi
 |---|---|
 | `App.js` | Shell principale: auth Firebase, routing sezioni, sidebar, obiettivi giornalieri |
 | `Contattologia.js` | Utilities, hooks Firebase (`useFirestoreCollection`), UI base, sezione Contattologia |
+| `PushGo.js` | Modulo Push&Go: integrazione OrdinaLac (tab "Push&Go ⚡" in Contattologia) |
 | `DashboardLaboratorio.js` | Sezioni Dashboard e Laboratorio |
 | `Amministrazione.js` | Sezioni Statistiche e Amministrazione |
 
@@ -76,7 +77,17 @@ Console gestionale per ottici VisionOttica. Obiettivo: gestire vendite, riparazi
 - **Dashboard** — riepilogo vendite/riparazioni, obiettivi giornalieri (TGT Fatturato, TGT WO) da `datiMensili`
 - **Laboratorio** — ricerca e gestione vendite, riparazioni, contatti
 - **Amministrazione** — statistiche venditori, gestione email, dati mensili
-- **Contattologia** — gestione contatti lenti a contatto
+- **Contattologia** — gestione contatti lenti a contatto + tab **Push&Go ⚡**
+
+## Modulo Push&Go (08/07/2026)
+
+`src/PushGo.js`, renderizzato come terzo tab della sezione Contattologia:
+- **Seconda app Firebase** `initializeApp(config, 'pushgo')` puntata al progetto **`ordinalac`** (auth e Firestore separati da console-visionottica)
+- Login con le **credenziali ottico del portale** https://ordinalac.web.app/dashboard (email/password, sessione persistente); link a `/register` per chi non ha l'account
+- **Tab Ordini**: `onSnapshot` su `orders` filtrata per `optician_id == uid`, cambio stato (Nuovo/In Lav./Pronto/Consegnato/Annullato), notifica WhatsApp, elimina con conferma
+- **Tab Nuovo Cliente / QR**: scheda cliente + indirizzo + prescrizione (produttore/modello dal listino `optician_config/{uid}/lenses/main`, parametri PWR/CYL/AXIS/ADD come **select vincolati ai range di produzione** letti da `catalogs/master.ranges`) → QR (`qrcode.react`, ora dipendenza del progetto) con stampa e copia link
+- Import `{ Button, Input, Select, TabButton, useConfirmation } from './Contattologia'` — ciclo di import con Contattologia.js ma innocuo (riferimenti usati solo a render time)
+- E2E verificato con Playwright: login modulo, form QR con select dai range reali, QR generato (screenshot 08/07)
 
 ---
 
