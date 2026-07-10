@@ -88,6 +88,7 @@ Console gestionale per ottici VisionOttica. Obiettivo: gestire vendite, riparazi
 - **Tab Nuovo Cliente / QR**: scheda cliente + indirizzo + prescrizione (produttore/modello dal listino `optician_config/{uid}/lenses/main`, parametri PWR/CYL/AXIS/ADD come **select vincolati ai range di produzione** letti da `catalogs/master.ranges`) → QR (`qrcode.react`, ora dipendenza del progetto) con stampa e copia link
 - Import `{ Button, Input, Select, TabButton, useConfirmation } from './Contattologia'` — ciclo di import con Contattologia.js ma innocuo (riferimenti usati solo a render time)
 - E2E verificato con Playwright: login modulo, form QR con select dai range reali, QR generato (screenshot 08/07)
+- **Modello per occhio (10/07/2026)**: allineato al portale ordinalac — produttore comune, select "Modello Lente" dentro ogni `LensEyeForm` (od/os hanno il campo `model`); il QR emette `md` (modello OD, legacy) + `mdos` (modello OS); lista ordini con etichetta `lensModelLabel` ("OD … · OS …" se diversi); "Genera QR" richiede entrambi i modelli. E2E 8/8 con ottico di prova (login, ordine con modelli diversi, QR con md+mdos verificati nel link copiato), zero errori JS
 
 ---
 

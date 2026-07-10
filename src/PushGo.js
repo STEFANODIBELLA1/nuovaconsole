@@ -79,17 +79,25 @@ const STATUS = {
     cancelled:  { label: 'Annullato',   cls: 'bg-red-100 text-red-800' },
 };
 
-function buildQrUrl(uid, form, od, os, manufacturer, model) {
+// md = modello OD (e legacy per app vecchie), mdos = modello OS
+function buildQrUrl(uid, form, od, os, manufacturer) {
     const p = new URLSearchParams({
         oid: uid,
         n: form.name, ph: form.phone, e: form.email, cf: form.cf,
         sa: form.street, sc: form.city, sz: form.cap, sp: form.prov,
-        m: manufacturer, md: model,
+        m: manufacturer, md: od.model, mdos: os.model,
         tod: od.type, pod: od.pwr, cod: od.cyl, aod: od.axis, addod: od.add,
         tos: os.type, pos: os.pwr, cos: os.cyl, aos: os.axis, addos: os.add,
     });
     return `${PUSHGO_URL}/?${p.toString()}`;
 }
+
+// Etichetta modello di un lens_order: unico se uguale per i due occhi, altrimenti OD/OS
+const lensModelLabel = (l) => {
+    const mod = l.od?.model || l.model || '';
+    const mos = l.os?.model || l.model || '';
+    return mod === mos ? mod : `OD ${mod || '—'} · OS ${mos || '—'}`;
+};
 
 // Campo parametro: select vincolato ai valori di produzione, altrimenti input libero
 const ParamField = ({ value, onChange, options, placeholder }) => {
@@ -106,15 +114,16 @@ const ParamField = ({ value, onChange, options, placeholder }) => {
     );
 };
 
-const EMPTY_EYE = { type: '', pwr: '', cyl: '', axis: '', add: '' };
+const EMPTY_EYE = { model: '', type: '', pwr: '', cyl: '', axis: '', add: '' };
 
-const LensEyeForm = ({ label, color, lensData, ranges, manufacturer, model, value, onChange }) => {
-    const types = lensData && manufacturer && model ? lensData[manufacturer]?.[model] || [] : [];
+const LensEyeForm = ({ label, color, lensData, ranges, manufacturer, value, onChange }) => {
+    const models = lensData && manufacturer ? Object.keys(lensData[manufacturer] || {}) : [];
+    const types = lensData && manufacturer && value.model ? lensData[manufacturer]?.[value.model] || [] : [];
     const t = (value.type || '').toLowerCase();
     const showPwr  = t && !t.includes('nessun');
     const showCyl  = t.includes('astigmatismo') || t.includes('toric') || t.includes('xr');
     const showAdd  = t.includes('multifocal') || t.includes('presbiopia');
-    const range = getRange(ranges, manufacturer, model, value.type);
+    const range = getRange(ranges, manufacturer, value.model, value.type);
 
     return (
         <div className={`relative border ${color === 'blue' ? 'border-blue-200 bg-blue-50' : 'border-green-200 bg-green-50'} rounded-xl p-4`}>
@@ -122,7 +131,12 @@ const LensEyeForm = ({ label, color, lensData, ranges, manufacturer, model, valu
                 {label}
             </div>
             <div className="mt-2 space-y-2">
-                <Select value={value.type} disabled={!model}
+                <Select value={value.model} disabled={!manufacturer}
+                    onChange={e => onChange({ model: e.target.value, type: '', pwr: '', cyl: '', axis: '', add: '' })}>
+                    <option value="">-- Modello Lente --</option>
+                    {models.map(m => <option key={m} value={m}>{m}</option>)}
+                </Select>
+                <Select value={value.type} disabled={!value.model}
                     onChange={e => onChange({ type: e.target.value, pwr: '', cyl: '', axis: '', add: '' })}>
                     <option value="">-- Tipo Lente --</option>
                     {types.map(ty => <option key={ty} value={ty}>{ty}</option>)}
@@ -276,7 +290,7 @@ const PushGoPanel = ({ user }) => {
                                         <p className="text-xs text-gray-500">{date} · {o.delivery?.mode === 'delivery' ? `Consegna: ${o.delivery?.address_full || ''}` : 'Ritiro in negozio'}</p>
                                         {o.lens_order && (
                                             <div className="text-sm text-gray-700 mt-2 space-y-0.5">
-                                                <p className="font-semibold">{o.lens_order.manufacturer} {o.lens_order.model}</p>
+                                                <p className="font-semibold">{o.lens_order.manufacturer} {lensModelLabel(o.lens_order)}</p>
                                                 <p><b>OD</b> {eyeLine(o.lens_order.od)}</p>
                                                 <p><b>OS</b> {eyeLine(o.lens_order.os)}</p>
                                             </div>
@@ -306,17 +320,15 @@ const PushGoPanel = ({ user }) => {
 // --- Generatore QR (scheda cliente + prescrizione) ---
 const QrGenerator = ({ uid, lensData, ranges }) => {
     const [form, setForm] = React.useState({ name: '', cf: '', email: '', phone: '', street: '', city: '', cap: '', prov: '' });
-    const [manuf, setManuf] = React.useState('');
-    const [model, setModel] = React.useState('');
+    const [manuf, setManuf] = React.useState(''); // produttore comune; modello per occhio in od/os
     const [od, setOd] = React.useState(EMPTY_EYE);
     const [os, setOs] = React.useState(EMPTY_EYE);
     const [qrUrl, setQrUrl] = React.useState('');
     const qrRef = React.useRef(null);
 
-    const models = lensData && manuf ? Object.keys(lensData[manuf] || {}) : [];
     const set = (key) => (e) => setForm(f => ({ ...f, [key]: key === 'cf' || key === 'prov' ? e.target.value.toUpperCase() : e.target.value }));
 
-    const generate = () => setQrUrl(buildQrUrl(uid, form, od, os, manuf, model));
+    const generate = () => setQrUrl(buildQrUrl(uid, form, od, os, manuf));
 
     const printQR = () => {
         const canvas = qrRef.current?.querySelector('canvas');
@@ -328,7 +340,7 @@ const QrGenerator = ({ uid, lensData, ranges }) => {
             h2{margin:0 0 4px;font-size:18px;} p{margin:0 0 16px;color:#555;font-size:13px;} img{border:1px solid #eee;padding:8px;border-radius:8px;}</style>
             </head><body>
             <h2>${form.name}</h2>
-            <p>${manuf} ${model} — Push&amp;Go</p>
+            <p>${manuf} ${od.model === os.model ? od.model : `OD: ${od.model} / OS: ${os.model}`} — Push&amp;Go</p>
             <img src="${dataUrl}" width="220" height="220" />
             <script>window.onload=function(){window.print();window.close();}<\\/script>
             </body></html>`);
@@ -377,29 +389,23 @@ const QrGenerator = ({ uid, lensData, ranges }) => {
                         Listino vuoto: abilita le lenti dal portale Push&Go (tab "Listino & Prezzi").
                     </p>
                 )}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
-                    <div><label className="text-xs font-bold text-gray-500">Produttore</label>
-                        <Select value={manuf} onChange={e => { setManuf(e.target.value); setModel(''); setOd(EMPTY_EYE); setOs(EMPTY_EYE); }}>
-                            <option value="">-- Seleziona --</option>
-                            {Object.keys(lensData).map(m => <option key={m} value={m}>{m}</option>)}
-                        </Select>
-                    </div>
-                    <div><label className="text-xs font-bold text-gray-500">Modello</label>
-                        <Select value={model} disabled={!manuf} onChange={e => { setModel(e.target.value); setOd(EMPTY_EYE); setOs(EMPTY_EYE); }}>
-                            <option value="">-- --</option>
-                            {models.map(m => <option key={m} value={m}>{m}</option>)}
-                        </Select>
-                    </div>
+                <div className="mb-5">
+                    <label className="text-xs font-bold text-gray-500">Produttore (comune ai due occhi)</label>
+                    <Select value={manuf} onChange={e => { setManuf(e.target.value); setOd(EMPTY_EYE); setOs(EMPTY_EYE); }}>
+                        <option value="">-- Seleziona --</option>
+                        {Object.keys(lensData).map(m => <option key={m} value={m}>{m}</option>)}
+                    </Select>
+                    <p className="text-xs text-gray-400 mt-1">Il modello lente si sceglie per ciascun occhio qui sotto (può essere diverso tra OD e OS).</p>
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
                     <LensEyeForm label="OCCHIO DESTRO (OD)" color="blue" lensData={lensData} ranges={ranges}
-                        manufacturer={manuf} model={model} value={od} onChange={vals => setOd(o => ({ ...o, ...vals }))} />
+                        manufacturer={manuf} value={od} onChange={vals => setOd(o => ({ ...o, ...vals }))} />
                     <LensEyeForm label="OCCHIO SINISTRO (OS)" color="green" lensData={lensData} ranges={ranges}
-                        manufacturer={manuf} model={model} value={os} onChange={vals => setOs(o => ({ ...o, ...vals }))} />
+                        manufacturer={manuf} value={os} onChange={vals => setOs(o => ({ ...o, ...vals }))} />
                 </div>
             </div>
             <div className="flex justify-end">
-                <Button onClick={generate} icon={QrCode} disabled={!form.name || !manuf || !model}>Genera QR</Button>
+                <Button onClick={generate} icon={QrCode} disabled={!form.name || !manuf || !od.model || !os.model}>Genera QR</Button>
             </div>
         </div>
     );
