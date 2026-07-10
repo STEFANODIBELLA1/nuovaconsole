@@ -92,12 +92,45 @@ function buildQrUrl(uid, form, od, os, manufacturer) {
     return `${PUSHGO_URL}/?${p.toString()}`;
 }
 
-// Etichetta modello di un lens_order: unico se uguale per i due occhi, altrimenti OD/OS
-const lensModelLabel = (l) => {
-    const mod = l.od?.model || l.model || '';
-    const mos = l.os?.model || l.model || '';
-    return mod === mos ? mod : `OD ${mod || '—'} · OS ${mos || '—'}`;
+const fmtEur = n => '€ ' + Number(n).toFixed(2).replace('.', ',');
+const hasPrice = p => Number.isFinite(Number(p)) && Number(p) > 0;
+
+// Riga occhio nella card ordine: modello → tipo/diottrie → quantità → prezzo
+const EyeOrderRow = ({ label, color, eye, fallbackModel }) => {
+    if (!eye) return null;
+    const params = [eye.type, eye.pwr && `SF:${eye.pwr}`, eye.cyl && `CYL:${eye.cyl}`, eye.axis && `AX:${eye.axis}`, eye.add && `ADD:${eye.add}`].filter(Boolean).join(' · ');
+    return (
+        <div className="border-b border-gray-200 pb-1.5 last:border-b-0">
+            <div className="flex items-center gap-2">
+                <span className={`font-bold ${color} text-xs w-6 flex-shrink-0`}>{label}</span>
+                <span className="flex-1 text-xs font-semibold text-gray-800 truncate">{eye.model || fallbackModel || '—'}</span>
+                <span className="font-bold bg-white border px-1 rounded text-xs flex-shrink-0">{eye.qty || 1} pz</span>
+                {hasPrice(eye.price) && <span className="font-bold text-blue-700 text-xs w-16 text-right flex-shrink-0">{fmtEur(eye.price)}</span>}
+            </div>
+            <p className="pl-8 mt-0.5 text-xs text-gray-600">{params || '—'}</p>
+        </div>
+    );
 };
+
+// Stampa ordine (stesso layout del portale)
+function printOrder(order) {
+    const l = order.lens_order || {};
+    const eurRow = p => hasPrice(p) ? fmtEur(p) : '-';
+    const w = window.open('', '_blank', 'height=600,width=800');
+    w.document.write(`<html><head><title>Ordine - ${order.patient_name}</title>
+        <style>body{font-family:sans-serif;padding:20px;} table{border-collapse:collapse;width:100%} td,th{border:1px solid #ddd;padding:8px;}</style>
+        </head><body>
+        <h2>Ordine Lenti — ${order.patient_name}</h2>
+        <p><b>Produttore:</b> ${l.manufacturer || '-'}</p>
+        <table><tr><th>Occhio</th><th>Modello</th><th>Tipo</th><th>PWR</th><th>CYL</th><th>AXIS</th><th>ADD</th><th>Qty</th><th>Prezzo</th></tr>
+        <tr><td>OD</td><td>${l.od?.model||l.model||'-'}</td><td>${l.od?.type||'-'}</td><td>${l.od?.pwr||'-'}</td><td>${l.od?.cyl||'-'}</td><td>${l.od?.axis||'-'}</td><td>${l.od?.add||'-'}</td><td>${l.od?.qty||1}</td><td>${eurRow(l.od?.price)}</td></tr>
+        <tr><td>OS</td><td>${l.os?.model||l.model||'-'}</td><td>${l.os?.type||'-'}</td><td>${l.os?.pwr||'-'}</td><td>${l.os?.cyl||'-'}</td><td>${l.os?.axis||'-'}</td><td>${l.os?.add||'-'}</td><td>${l.os?.qty||1}</td><td>${eurRow(l.os?.price)}</td></tr>
+        </table>
+        ${l.total != null ? `<p style="text-align:right;font-size:16px"><b>TOTALE: ${fmtEur(l.total)}</b></p>` : ''}
+        <p><b>Consegna:</b> ${order.delivery?.mode === 'delivery' ? order.delivery?.address_full : 'Ritiro in negozio'}</p>
+        <script>window.print();window.close();<\\/script></body></html>`);
+    w.document.close();
+}
 
 // Campo parametro: select vincolato ai valori di produzione, altrimenti input libero
 const ParamField = ({ value, onChange, options, placeholder }) => {
@@ -199,6 +232,7 @@ const PushGoPanel = ({ user }) => {
     const [orders, setOrders] = React.useState([]);
     const [lensData, setLensData] = React.useState({});
     const [ranges, setRanges] = React.useState({});
+    const [supplyOrder, setSupplyOrder] = React.useState(null); // ordine per cui scegliere la fornitura
     const [ConfirmationDialog, requestConfirmation] = useConfirmation('Elimina ordine');
 
     React.useEffect(() => {
@@ -248,7 +282,17 @@ const PushGoPanel = ({ user }) => {
         }
     );
 
-    const eyeLine = (e) => e ? [e.type, e.pwr && `SF:${e.pwr}`, e.cyl && `CYL:${e.cyl}`, e.axis && `AX:${e.axis}`, e.add && `ADD:${e.add}`, e.qty && `${e.qty} pz.`].filter(Boolean).join(' · ') : '-';
+    const requestSupply = async (order, destination) => {
+        try {
+            await updateDoc(doc(pgDb, 'orders', order.id), {
+                supply_request: { status: 'pending', destination, requested_at: new Date() }
+            });
+            toast.success('Richiesta fornitura inviata!');
+        } catch {
+            toast.error('Errore nella richiesta fornitura.');
+        }
+        setSupplyOrder(null);
+    };
 
     return (
         <div>
@@ -279,20 +323,45 @@ const PushGoPanel = ({ user }) => {
                     {orders.map(o => {
                         const st = STATUS[o.status] || { label: o.status, cls: 'bg-gray-100 text-gray-600' };
                         const date = o.timestamp?.toDate ? o.timestamp.toDate().toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+                        const l = o.lens_order;
+                        const hasSupply = o.supply_request?.status === 'pending';
+                        const supplyDest = o.supply_request?.destination;
                         return (
                             <div key={o.id} className="bg-gray-50 border rounded-lg p-4 shadow-sm">
                                 <div className="flex flex-wrap justify-between items-start gap-3">
-                                    <div>
+                                    <div className="flex-1 min-w-[280px]">
                                         <div className="flex items-center gap-2">
                                             <p className="font-bold text-lg text-gray-800">{o.patient_name || 'Cliente'}</p>
                                             <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${st.cls}`}>{st.label}</span>
                                         </div>
                                         <p className="text-xs text-gray-500">{date} · {o.delivery?.mode === 'delivery' ? `Consegna: ${o.delivery?.address_full || ''}` : 'Ritiro in negozio'}</p>
-                                        {o.lens_order && (
-                                            <div className="text-sm text-gray-700 mt-2 space-y-0.5">
-                                                <p className="font-semibold">{o.lens_order.manufacturer} {lensModelLabel(o.lens_order)}</p>
-                                                <p><b>OD</b> {eyeLine(o.lens_order.od)}</p>
-                                                <p><b>OS</b> {eyeLine(o.lens_order.os)}</p>
+                                        {o.client_info?.phone && <p className="text-xs text-gray-500">📞 {o.client_info.phone}</p>}
+                                        {l && (
+                                            <div className="bg-white border rounded-lg p-3 mt-2 text-sm">
+                                                <div className="flex justify-between items-center mb-2 gap-2 flex-wrap">
+                                                    <span className="font-bold text-gray-800">{l.manufacturer}</span>
+                                                    {hasSupply
+                                                        ? <span className={`px-2 py-1 rounded text-xs font-bold ${supplyDest === 'client' ? 'bg-purple-100 text-purple-700' : 'bg-orange-100 text-orange-700'}`}>
+                                                            {supplyDest === 'client' ? '🟣 Fornitura: CLIENTE' : '🟠 Fornitura: NEGOZIO'}
+                                                        </span>
+                                                        : o.status !== 'cancelled' && o.status !== 'completed' && (
+                                                            <button onClick={() => setSupplyOrder(o)}
+                                                                className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded text-xs font-bold transition">
+                                                                📦 Ordina al Fornitore
+                                                            </button>
+                                                        )
+                                                    }
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <EyeOrderRow label="OD" color="text-blue-600"  eye={l.od} fallbackModel={l.model} />
+                                                    <EyeOrderRow label="OS" color="text-green-600" eye={l.os} fallbackModel={l.model} />
+                                                </div>
+                                                {l.total != null && (
+                                                    <div className="flex justify-between items-center pt-2 mt-2 border-t border-gray-200">
+                                                        <span className="font-bold text-gray-700 text-xs uppercase">Totale</span>
+                                                        <span className="font-bold text-blue-700">{fmtEur(l.total)}</span>
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                     </div>
@@ -302,6 +371,8 @@ const PushGoPanel = ({ user }) => {
                                         </Select>
                                         <button onClick={() => notifyWhatsApp(o)} title="Notifica WhatsApp"
                                             className="p-2 text-green-600 hover:bg-green-100 rounded-lg"><MessageCircle size={18} /></button>
+                                        <button onClick={() => printOrder(o)} title="Stampa ordine"
+                                            className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg"><Printer size={18} /></button>
                                         <button onClick={() => deleteOrder(o)} title="Elimina"
                                             className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={18} /></button>
                                     </div>
@@ -309,6 +380,32 @@ const PushGoPanel = ({ user }) => {
                             </div>
                         );
                     })}
+
+                    {/* Modal scelta destinazione fornitura */}
+                    {supplyOrder && (
+                        <div className="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex items-center justify-center p-6 z-50">
+                            <div className="bg-white w-full max-w-md rounded-xl shadow-2xl p-6 border-t-4 border-indigo-500">
+                                <h3 className="text-xl font-bold text-gray-900 mb-2">Richiesta Fornitura Lenti</h3>
+                                <p className="text-sm text-gray-600 mb-6">Seleziona la destinazione per <b>{supplyOrder.patient_name}</b>.</p>
+                                <div className="space-y-3">
+                                    {supplyOrder.delivery?.mode === 'delivery' && (
+                                        <button onClick={() => requestSupply(supplyOrder, 'client')}
+                                            className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-lg">
+                                            Spedisci al Cliente (Drop-shipping)
+                                        </button>
+                                    )}
+                                    <button onClick={() => requestSupply(supplyOrder, 'store')}
+                                        className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-lg">
+                                        Spedisci al Negozio
+                                    </button>
+                                    <button onClick={() => setSupplyOrder(null)}
+                                        className="w-full bg-gray-100 text-gray-700 font-bold py-3 rounded-lg hover:bg-gray-200">
+                                        Annulla
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
